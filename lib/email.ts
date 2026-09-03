@@ -97,10 +97,10 @@ function buildHtml(input: ReferralEmailInput) {
         <td style="padding:28px;">
           <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">New referral</p>
           <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">
-            ${e(input.referrerName)} has referred someone to you
+            ${e(input.referrerName)} has referred a great contact to you
           </h1>
           <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#4a4a46;">
-            Hi ${e(input.recipientFirstName)}, this is a referral from your fellow RED networking group member
+            Hi ${e(input.recipientFirstName)}, this is a referral from your fellow RED member
             <strong>${e(input.referrerName)}</strong>${input.referrerCompany ? ` of ${e(input.referrerCompany)}` : ""}.
           </p>
 
@@ -115,7 +115,7 @@ function buildHtml(input: ReferralEmailInput) {
           </div>
 
           <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#6d6d68;">
-            Reach out soon while the introduction is fresh. Once business results from it, record it in incREDible as a Done Deal.
+            Reach out soon while the introduction is fresh. When closed business results from it, record it in incREDible as a Done Deal.
           </p>
         </td>
       </tr>
@@ -130,7 +130,7 @@ function buildText(input: ReferralEmailInput) {
     ``,
     `Hi ${input.recipientFirstName},`,
     ``,
-    `${input.referrerName}${input.referrerCompany ? ` of ${input.referrerCompany}` : ""}, a fellow RED networking group member, has referred someone to you.`,
+    `${input.referrerName}${input.referrerCompany ? ` of ${input.referrerCompany}` : ""}, a fellow RED group member, has referred someone to you.`,
     ``,
     `WHO TO CONTACT`,
     `Name:    ${input.referredName}`,
@@ -141,7 +141,7 @@ function buildText(input: ReferralEmailInput) {
     `WHY THEY'RE BEING REFERRED`,
     input.details,
     ``,
-    `Reach out soon while the introduction is fresh. Once business results from it, record it in incREDible as a Done Deal.`,
+    `Reach out soon while the introduction is fresh. When closed results from it, record it in incREDible as a Done Deal.`,
   ]
     .filter((line) => line !== null)
     .join("\n")
