@@ -232,11 +232,11 @@ function buildResetText(input: PasswordResetEmailInput) {
  * curly apostrophes. Don't "tidy" it.
  */
 const FOOTER_LINES = [
-  "This is a real email, but this mailbox doesn\u2019t actually exist. Who, me? \u{1F440}",
+  "This is a real email, but this mailbox doesn\u2019t really exist. Who, me? \u{1F440}",
   "Please don\u2019t reply \u2014 your message will only confuse the cyberspace ghosts. \u{1F47B}",
 ] as const
 
-const FOOTER_COPYRIGHT = "(C) The Pride Chamber X Poolsyde 2026"
+const FOOTER_COPYRIGHT = "&#169; The Pride Chamber X Poolsyde 2026"
 
 /**
  * Sits below the white card on the page background, which is the conventional
@@ -501,6 +501,7 @@ function buildVousLoggedHtml(input: VousLoggedEmailInput) {
           </p>
           <p style="${p}">Already logged it? Just ignore this email and keep smilin&#39; :-)</p>
           <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">Ciao for now,</p>
+          <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">Your REDical friends xoxo</p>
         </td>
       </tr>
     </table>
@@ -520,6 +521,7 @@ function buildVousLoggedText(input: VousLoggedEmailInput) {
     `Already logged it? Just ignore this email and keep smilin' :-)`,
     ``,
     `Ciao for now,`,
+    `Your REDical friends`,
   ].join("\n")
 }
 
