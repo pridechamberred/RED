@@ -4,8 +4,9 @@ import { signOut } from "@/app/actions"
 import { AppShell } from "@/components/app-shell"
 import { PasskeyManager } from "@/components/passkey-manager"
 import { Button } from "@/components/ui/button"
+import { AvatarUpload } from "@/app/profile/avatar-upload"
 import { getCurrentMember } from "@/lib/data"
-import { initials, isAdmin, memberName } from "@/lib/types"
+import { isAdmin, memberName } from "@/lib/types"
 import { KeyRound, LogOut } from "lucide-react"
 
 const ROLE_LABELS = {
@@ -28,12 +29,7 @@ export default async function ProfilePage() {
   return (
     <AppShell showAdmin={isAdmin(me.role)}>
       <header className="flex flex-col items-center gap-4 text-center">
-        <span
-          aria-hidden
-          className="flex size-20 items-center justify-center rounded-full bg-secondary text-2xl font-bold text-secondary-foreground"
-        >
-          {initials(me)}
-        </span>
+        <AvatarUpload member={me} />
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold tracking-tight">{memberName(me)}</h1>
           <p className="text-sm text-muted-foreground">{ROLE_LABELS[me.role]}</p>

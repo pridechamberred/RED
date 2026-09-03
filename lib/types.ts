@@ -13,6 +13,8 @@ export type Member = {
   company: string | null
   role: Role
   sub_group: SubGroup
+  /** Uploaded profile picture. Null means "no picture" — render initials. */
+  avatar_url: string | null
   created_at: string
 }
 
@@ -23,6 +25,7 @@ export type MemberOption = {
   last_name: string
   company: string | null
   sub_group: SubGroup
+  avatar_url: string | null
 }
 
 export type ActivityType =

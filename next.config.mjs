@@ -25,7 +25,9 @@ const nextConfig = {
             key: 'Content-Security-Policy-Report-Only',
             value: [
               "default-src 'self'",
-              "img-src 'self' data: blob:",
+              // Supabase Storage serves member avatars; blob: covers the local
+              // preview shown while an upload is still in flight.
+              `img-src 'self' data: blob: ${supabaseOrigin} https://*.supabase.co`.trim(),
               "style-src 'self' 'unsafe-inline'",
               "script-src 'self' 'unsafe-inline'",
               "font-src 'self' data:",
