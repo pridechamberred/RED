@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
-import { type MemberOption, initials, memberName } from "@/lib/types"
+import { MemberAvatar } from "@/components/member-avatar"
+import { type MemberOption, memberName } from "@/lib/types"
 import { Search, X } from "lucide-react"
 
 /**
@@ -96,12 +97,7 @@ export function MemberSearch({ members }: { members: MemberOption[] }) {
                 onClick={() => router.push(`/member/${m.id}`)}
                 className="flex w-full items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-3.5 text-left transition-colors hover:border-primary/40 hover:bg-accent/60"
               >
-                <span
-                  aria-hidden
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-bold text-secondary-foreground"
-                >
-                  {initials(m)}
-                </span>
+                <MemberAvatar member={m} size="sm" />
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-semibold leading-tight">{memberName(m)}</span>
                   <span className="truncate text-sm leading-relaxed text-muted-foreground">

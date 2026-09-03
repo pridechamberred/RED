@@ -2,8 +2,9 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
 import { FormHeader } from "@/components/form-header"
+import { MemberAvatar } from "@/components/member-avatar"
 import { getCurrentMember, getMemberById } from "@/lib/data"
-import { initials, isAdmin, memberName } from "@/lib/types"
+import { isAdmin, memberName } from "@/lib/types"
 import { ChevronRight, Handshake, Gift } from "lucide-react"
 
 const ACTIONS = [
@@ -39,12 +40,7 @@ export default async function MemberActionPage({ params }: { params: Promise<{ i
       <FormHeader title={name} subtitle="What would you like to record?" backHref="/" backLabel="Search" />
 
       <div className="mt-5 flex items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-3.5">
-        <span
-          aria-hidden
-          className="flex size-12 shrink-0 items-center justify-center rounded-full bg-secondary text-base font-bold text-secondary-foreground"
-        >
-          {initials(member)}
-        </span>
+        <MemberAvatar member={member} size="md" />
         <span className="flex min-w-0 flex-col">
           <span className="truncate font-semibold leading-tight">{name}</span>
           <span className="truncate text-sm leading-relaxed text-muted-foreground">

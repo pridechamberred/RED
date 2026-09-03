@@ -38,20 +38,42 @@ export async function getCurrentMember(): Promise<Member | null> {
   return (data as Member) ?? null
 }
 
+/** Postgres "undefined_column" — the column named in the select does not exist. */
+const UNDEFINED_COLUMN = "42703"
+
 /** Everyone except the signed-in member — this is what the search box filters over. */
 export async function getSearchableMembers(excludeMemberId: string): Promise<MemberOption[]> {
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("members")
-    .select("id, first_name, last_name, company, sub_group")
-    .neq("id", excludeMemberId)
-    .order("first_name")
 
-  if (error) {
-    console.log("[v0] getSearchableMembers error:", error.message)
-    return []
+  const query = (fields: string) =>
+    supabase.from("members").select(fields).neq("id", excludeMemberId).order("first_name")
+
+  const { data, error } = await query("id, first_name, last_name, company, sub_group, avatar_url")
+
+  if (!error) return (data as unknown as MemberOption[]) ?? []
+
+  // Avatars arrived in migration 010. If the code is deployed before that SQL
+  // is run, selecting the column fails and this function is what feeds the
+  // home screen — so the whole member search would come back empty, looking
+  // like every member had vanished. Retry without it and render initials.
+  //
+  // Safe to simplify back to a single select once 010 is applied everywhere.
+  if (error.code === UNDEFINED_COLUMN) {
+    console.log("[v0] getSearchableMembers: members.avatar_url missing, run migration 010. Falling back.")
+    const { data: legacy, error: legacyError } = await query("id, first_name, last_name, company, sub_group")
+
+    if (legacyError) {
+      console.log("[v0] getSearchableMembers fallback error:", legacyError.message)
+      return []
+    }
+    return ((legacy as unknown as Omit<MemberOption, "avatar_url">[]) ?? []).map((m) => ({
+      ...m,
+      avatar_url: null,
+    }))
   }
-  return (data as MemberOption[]) ?? []
+
+  console.log("[v0] getSearchableMembers error:", error.message)
+  return []
 }
 
 // The referrer's name is embedded rather than joined by hand so it arrives with
