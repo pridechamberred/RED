@@ -2,7 +2,11 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { RECOVERY_COOKIE } from "@/lib/auth-recovery"
 
-const PUBLIC_PATHS = ["/auth", "/_next", "/favicon.ico"]
+// "/g" is the personal guest-invitation landing page. It MUST stay public: the
+// whole point is that someone with no account can scan a member's QR code and
+// register. It exposes only the inviting member's name, company and photo, and
+// its single write goes through a server action that re-validates the token.
+const PUBLIC_PATHS = ["/auth", "/g/", "/_next", "/favicon.ico"]
 
 const RETIRED_AUTH_PATHS = ["/auth/sign-up", "/auth/sign-up-success"]
 
@@ -88,7 +92,11 @@ export async function updateSession(request: NextRequest) {
   const mustChangePassword = user?.user_metadata?.must_change_password === true || isRecovering
   const isAsset = pathname.startsWith("/_next") || pathname === "/favicon.ico"
 
-  if (mustChangePassword && !isAsset && pathname !== "/auth/set-password") {
+  // The public guest page is exempt too. Without this, a member who happens to
+  // still be on their temporary password gets bounced to the password screen
+  // when they open their own invite link to check it — and, worse, so would a
+  // guest who had ever signed in on that phone.
+  if (mustChangePassword && !isAsset && !pathname.startsWith("/g/") && pathname !== "/auth/set-password") {
     const url = request.nextUrl.clone()
     url.pathname = "/auth/set-password"
     // Carried through the redirect so a member who reset their password is not

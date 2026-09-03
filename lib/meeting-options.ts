@@ -6,6 +6,15 @@ import type { SubGroup } from "@/lib/types"
 /** How many upcoming meetings the guest-invite dropdown offers. */
 export const MEETING_OPTION_LIMIT = 30
 
+/**
+ * How many meetings the public guest page lists.
+ *
+ * Larger than the member-facing dropdown: a guest scanning a QR code at another
+ * event may be planning months ahead, and across five sub-groups 40 occurrences
+ * is roughly the next eight weeks.
+ */
+export const GUEST_MEETING_LIMIT = 40
+
 export type MeetingOption = {
   /** Opaque key the client sends back. */
   id: string

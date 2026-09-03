@@ -68,7 +68,7 @@ export function GuestInviteForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-5">
+    <form onSubmit={onSubmit} className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
         <Label htmlFor="guestName">Guest&apos;s name</Label>
         <Input id="guestName" name="guestName" required autoComplete="off" className="h-12" />

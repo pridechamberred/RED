@@ -15,6 +15,15 @@ export type Member = {
   sub_group: SubGroup
   /** Uploaded profile picture. Null means "no picture" — render initials. */
   avatar_url: string | null
+  /**
+   * Permanent personal guest-invite token (migration 011).
+   *
+   * Optional in the type because `getCurrentMember` uses `select("*")`: before
+   * the migration runs the column is simply absent from the row. Callers treat
+   * that as "QR codes not switched on yet" rather than failing, so deploying
+   * this code before running the SQL degrades one panel instead of the app.
+   */
+  invite_token?: string | null
   created_at: string
 }
 
