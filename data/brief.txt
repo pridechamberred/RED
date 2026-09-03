@@ -1,0 +1,970 @@
+Build Prompt: Networking Group Activity App
+
+Build a clean, modern, mobile-first web application for a business networking group.
+
+The app is an extremely simple activity-recording system. Its purpose is to allow members to quickly record networking activity and allow administrators to see all activity across the group. The priority is a clean, beautiful and user-friendly UX.
+
+IMPORTANT: This is an MVP. Do not add features that are not explicitly requested below. Prioritize simplicity, speed, and an excellent mobile UX over feature richness.
+
+1. Core UX PRINCIPLE
+
+The application should feel Google-like rather than like a traditional business-management application.
+
+The user should not have to navigate through menus to find a person and then choose an action.
+
+The primary interaction on the homepage should be:
+
+Who are you looking for?
+
+A large search box allows the user to start typing a member’s name.
+
+As they type, matching members appear immediately.
+
+When the user selects a person, show a very simple action screen:
+
+What would you like to record?
+
+🤝 Record a Vous
+
+🎁 Pass a Referral
+
+💰 Report a Done Deal
+
+The selected person should automatically be associated with the action wherever appropriate.
+
+For example:
+
+User types “Sarah”
+
+Sarah Smith appears
+
+User taps Sarah Smith
+
+Three large buttons appear:
+
+Record a Vous
+
+Make a Referral
+
+Report a Done Deal
+
+User completes the minimum information required.
+
+The record is saved.
+
+Show a simple success confirmation.
+
+The goal is that a member can record an activity in seconds, without having to understand the application.
+
+2. USERS
+
+There are three roles:
+
+USER
+
+A networking-group member who can:
+
+Record Vous / 1:1 meetings with another user
+
+Record passed referrals to another user
+
+Record done deals from another user
+
+Record own volunteering hours
+
+Record own attendance at events
+
+NOTE: There are currently five sub-groups within the networking group, each user belongs to one of these sub-groups.
+
+ADMIN
+
+An administrator who can:
+
+See all data recorded by all users in their own sub-group
+
+Filter and search the data in their own sub-group
+
+View individual member activity in their own sub-group
+
+Admins do not need complicated management functionality in this MVP.
+
+SUPER-ADMIN
+
+An administrator who can:
+
+See all data recorded by all users across all sub-groups
+
+Filter and search the data across all sub-groups
+
+View individual member activity across all sub-groups
+
+3. HOMEPAGE
+
+The homepage should be extremely simple.
+
+At the top:
+
+“Hey [user_name], what’s up?”
+
+The primary interaction should be the people search.
+
+Large search field:
+
+Search a member…
+
+Placeholder example:
+
+Start typing a name or business
+
+As the user types, show matching members from the database.
+
+Each result should display:
+
+User NameBusiness Name
+
+The search should be fast and forgiving.
+
+Support:
+
+First name
+
+Last name
+
+Partial names
+
+Business name 
+
+Do not require the user to browse an alphabetical directory.
+
+4. MEMBER ACTION SCREEN
+
+When a member is selected, display their name prominently:
+
+e.g. Sarah Smith
+
+Then:
+
+What would you like to record?
+
+Three large action cards/buttons:
+
+🤝 Record a Vous
+
+Records a 1:1 meeting with this person.
+
+🎁 Pass a Referral
+
+Creates a referral for this person.
+
+💰 Report a Done Deal
+
+Records business generated from a referral from this person.
+
+The selected person should already be populated in the relevant form.
+
+Include a simple “Back” option to return to search.
+
+5. RECORD A VOUS
+
+A Vous is a 1:1 meeting between two networking group members.
+
+The user arrives here after selecting the person they met.
+
+Show:
+
+Record a Vous with Sarah Smith
+
+Fields:
+
+Date
+
+Default to today’s date.
+
+Allow the user to change it.
+
+Notes
+
+Optional.
+
+Small text area:
+
+Anything you’d like to remember about this meeting?
+
+The notes field is optional.
+
+Primary button:
+
+Record Vous
+
+After submission:
+
+Vous recorded!
+
+Then provide:
+
+Record another activity
+
+and
+
+Back to Home
+
+Keep this extremely fast.
+
+6. PASS A REFERRAL
+
+A referral is a referral from one member to another.
+
+The user arrives here after selecting the member they are referring TO.
+
+For example:
+
+User searches for Sarah Smith → selects Sarah → taps “Make a Referral.”
+
+Show:
+
+Pass a referral to Sarah Smith
+
+The user needs to provide information about the person being referred.
+
+Fields:
+
+Referred person’s name
+
+Required.
+
+Referred person’s email
+
+Required.
+
+Referred person’s phone
+
+Optional.
+
+Referred person’s company
+
+Optional.
+
+Referral details
+
+Required.
+
+A larger text area:
+
+Tell Sarah about the person you’re referring and why you think they should connect.
+
+Primary button:
+
+Send Referral
+
+REFERRAL EMAIL
+
+When the referral is submitted, automatically send an email to the member receiving the referral.
+
+The email should contain:
+
+Name of the person making the referral
+
+Name of the referred person
+
+Referred person’s email
+
+Referred person’s phone, if provided
+
+Referred person’s company, if provided
+
+Referral details
+
+The email should clearly communicate that this is a referral from a fellow networking-group member.
+
+The recipient should be able to easily understand:
+
+Who referred this person?
+
+Who is the person being referred?
+
+How do I contact them?
+
+Why are they being referred to me?
+
+After sending, show:
+
+Referral sent!
+
+Then:
+
+Make another referral
+
+and
+
+Back to Home
+
+7. REPORT A DONE DEAL
+
+A Done Deal records business that resulted from a referral.
+
+The user should arrive here after selecting the networking-group member who originally provided the referral.
+
+Show:
+
+Report a Done Deal from Sarah Smith
+
+Fields:
+
+Customer / business name
+
+Required.
+
+Deal value
+
+Required.
+
+Currency amount.
+
+Deal type
+
+Required.
+
+Two very simple choices:
+
+One-off
+
+or
+
+Recurring / Subscription
+
+If recurring/subscription is selected, also ask:
+
+Recurring value
+
+and allow the user to specify the recurring amount and frequency.
+
+For example:
+
+$500 / month
+
+The application should store both the deal value and whether the deal is recurring.
+
+Primary button:
+
+Record Done Deal
+
+After submission:
+
+Done Deal recorded!
+
+Then:
+
+Record another activity
+
+and
+
+Back to Home
+
+8. VOLUNTEERING HOURS
+
+Volunteering is different because it is not necessarily associated with another networking-group member.
+
+Provide a simple action from the homepage:
+
+Record Volunteering
+
+Form:
+
+Date
+
+Default to today.
+
+Organization / Event
+
+Required.
+
+Hours
+
+Required.
+
+Numeric input.
+
+Notes
+
+Optional.
+
+Primary button:
+
+Record Hours
+
+After submission:
+
+Volunteering recorded!
+
+9. OTHER CHAMBER EVENTS
+
+Provide another simple homepage action:
+
+Record Chamber Event
+
+Form:
+
+Event name
+
+Required.
+
+Date
+
+Default to today.
+
+Hours
+
+Optional.
+
+Notes
+
+Optional.
+
+Primary button:
+
+Record Attendance
+
+After submission:
+
+Attendance recorded!
+
+10. HOMEPAGE ACTIONS
+
+The homepage should therefore have a very small number of elements.
+
+Suggested layout:
+
+NETWORKING GROUP
+
+Search a member
+
+[ 🔎 Search a member… ]
+
+Below the search:
+
+[ Record Volunteering ]
+
+[ Record Chamber Event ]
+
+At the bottom:
+
+My Activity
+
+and
+
+Admin only if the logged-in user is an admin or super-admin.
+
+When a user searches for a member, the member results appear directly below the search field.
+
+Do not make users navigate to a separate “Members” page.
+
+11. MY ACTIVITY
+
+Users should be able to see the activity they have personally recorded.
+
+Keep this simple.
+
+Display a chronological list with activity type, date, and relevant person/value.
+
+Examples:
+
+🤝 VousSarah SmithAug 20, 2026
+
+🎁 ReferralJames Brown → Sarah SmithAug 19, 2026
+
+💰 Done DealReferral from Sarah Smith$1,200 recurringAug 18, 2026
+
+❤️ VolunteeringCommunity Food Drive3 hoursAug 17, 2026
+
+The user should not need a complicated reporting interface.
+
+12. ADMIN DASHBOARD
+
+Admins need to see ALL data recorded by ALL users.
+
+The sufferance between an admin and super-admin is that admins can see only activities from their own sub-group and super-admins can see all activity across all groups.
+
+Create a simple admin dashboard.
+
+The dashboard should contain:
+
+Activity feed
+
+A chronological table/list of all activities.
+
+Columns/fields should include:
+
+Date
+
+Member
+
+Activity type
+
+Other member, where applicable
+
+Customer/referred person, where applicable
+
+Value, where applicable
+
+Recurring/one-off, where applicable
+
+Admins should be able to filter by:
+
+Member
+
+Activity type
+
+Date range
+
+Activity types:
+
+Vous
+
+Referral
+
+Done Deal
+
+Volunteering
+
+Chamber Event
+
+13. ADMIN MEMBER VIEW
+
+Admins should be able to select a member and see that member’s activity.
+
+Display a simple summary:
+
+Sarah Smith
+
+Then activity totals such as:
+
+Vous
+
+Referrals given
+
+Referrals received
+
+Done Deals
+
+Deal value
+
+Volunteering hours
+
+Chamber events
+
+Then show the member’s activity history.
+
+Do not build complicated analytics or charts unless they are trivial to implement.
+
+14. DATABASE
+
+Use Supabase for authentication and database functionality.
+
+Create appropriate tables for:
+
+users / members
+
+id
+
+first_name
+
+last_name
+
+email
+
+company
+
+role
+
+created_at
+
+sub-group
+
+Roles:
+
+user
+
+admin
+
+super-admin
+
+vous
+
+id
+
+user_id
+
+member_id
+
+date
+
+notes
+
+created_at
+
+referrals
+
+id
+
+referrer_user_id
+
+recipient_member_id
+
+referred_name
+
+referred_email
+
+referred_phone
+
+referred_company
+
+details
+
+created_at
+
+done_deals
+
+id
+
+user_id
+
+referral_from_member_id
+
+customer_name
+
+deal_value
+
+deal_type
+
+recurring_value
+
+date
+
+created_at
+
+volunteering
+
+id
+
+user_id
+
+date
+
+organization
+
+hours
+
+notes
+
+created_at
+
+chamber_events
+
+id
+
+user_id
+
+date
+
+event_name
+
+hours
+
+notes
+
+created_at
+
+Use foreign keys appropriately.
+
+15. AUTHENTICATION
+
+Users should log in securely.
+
+Use Supabase authentication.
+
+Once logged in, the application should know:
+
+Who the user is
+
+What sub-group they are part of
+
+Their member record
+
+Whether they are an admin
+
+Users should only be able to create records as themselves.
+
+Users should be able to see their own activity.
+
+Admins can see all activity.
+
+Implement appropriate Supabase Row Level Security policies.
+
+16. DESIGN
+
+The design should feel:
+
+Modern
+
+Friendly
+
+Professional
+
+Extremely simple
+
+Mobile-first
+
+Fast
+
+Not corporate
+
+Not like accounting software
+
+Think:
+
+Google Search + modern SaaS + networking community
+
+Avoid:
+
+Dense dashboards
+
+Complicated navigation
+
+Huge tables on mobile
+
+Multiple levels of menus
+
+Unnecessary settings
+
+Excessive forms
+
+Excessive confirmation screens
+
+Use large touch-friendly buttons.
+
+Use clear typography.
+
+Use icons where they help users recognize actions quickly.
+
+17. RESPONSIVE DESIGN
+
+Mobile is the primary use case.
+
+Assume many users will record activity immediately after a networking meeting from their phone.
+
+The interface should work beautifully on:
+
+iPhone
+
+Android
+
+Tablet
+
+Desktop
+
+On mobile, forms should be short and use appropriate input types.
+
+For example:
+
+Date picker for dates
+
+Numeric keyboard for money
+
+Numeric keyboard for hours
+
+Email keyboard for email fields
+
+18. IMPORTANT UX DETAILS
+
+Minimize typing
+
+Whenever possible, populate information automatically.
+
+For example:
+
+If Den searches for Sarah Smith and chooses:
+
+Record a Vous
+
+the form should already say:
+
+Vous with Sarah Smith
+
+Den should only need to confirm the date and optionally add notes.
+
+Likewise:
+
+Report Done Deal
+
+should already know that the referral came from Sarah Smith.
+
+Search should be forgiving and use search-as-you-type.
+
+If the user enters:
+
+“Sarah”
+
+show Sarah Smith.
+
+If they enter:
+
+“Smith”
+
+show Sarah Smith.
+
+If they enter part of the company name, show matching members if possible.
+
+Confirmation should be immediate
+
+After every successful action, provide a clear success state.
+
+Do not redirect users into complicated workflows.
+
+19. NAVIGATION
+
+Keep navigation minimal.
+
+Mobile navigation could contain:
+
+Home
+
+My Activity
+
+Profile
+
+Admins additionally see:
+
+Admin
+
+Do not create navigation items for every individual activity type.
+
+The homepage is the central action hub.
+
+20. DO NOT BUILD
+
+This MVP does NOT require:
+
+Chat
+
+Messaging
+
+Social networking
+
+Member profiles beyond basic information
+
+Payments
+
+Subscriptions
+
+Invoicing
+
+CRM functionality
+
+Calendar integration
+
+Google Calendar
+
+Complex reporting
+
+Gamification
+
+Leaderboards
+
+Push notifications
+
+Mobile apps
+
+Marketplace functionality
+
+Public member directory
+
+Complex permissions beyond user/admin
+
+Editing complex workflows
+
+File uploads
+
+Do not invent additional features.
+
+21. SEED DATA
+
+Create realistic seed/demo members so the UI can be demonstrated immediately.
+
+For example:
+
+Sarah Smith — Smith MarketingJames Brown — Brown AccountingMichael Jones — Jones InsuranceLisa Williams — Williams Realty
+
+Use fictional data only.
+
+22. TECHNICAL REQUIREMENTS
+
+Use:
+
+Next.js
+
+React
+
+TypeScript
+
+Tailwind CSS
+
+Supabase
+
+Modern component architecture
+
+Responsive design
+
+Structure the application so that it can be deployed to Vercel.
+
+Keep components reusable and the codebase clean.
+
+Use environment variables for Supabase credentials.
+
+Do not hard-code authentication credentials or API keys.
+
+For referral emails, create the email-sending functionality so it can be connected to an email provider such as Resend.
+
+23. THE MOST IMPORTANT SUCCESS CRITERION
+
+The app should make this interaction incredibly easy:
+
+“I just had a 1:1 with Sarah.”
+
+Open app.
+
+Search:
+
+Sarah
+
+Tap:
+
+Sarah Smith
+
+Tap:
+
+Record a Vous
+
+Tap:
+
+Record Vous
+
+Done.
+
+Similarly:
+
+“I just gave Sarah a referral.”
+
+Search Sarah → Pass a Referral → enter referral information → Send Referral → done.
+
+And:
+
+“Sarah sent me a customer who just bought $2,000 of services.”
+
+Search Sarah → Report a Done Deal → enter customer/value/type → Record Done Deal → done.
+
+The user should never have to think about where information belongs in the application.
+
+Build the UI around these real-world interactions rather than around database entities.
+
+The application should feel like a quick activity recorder, not a management system.
+
