@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { ActivityList } from "@/components/activity-list"
+import { PaginatedActivityList } from "@/components/paginated-activity-list"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -292,7 +292,7 @@ export function AdminDashboard({
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Activity feed</h2>
-        <ActivityList rows={filtered} showMemberName emptyMessage="No activity matches these filters." />
+        <PaginatedActivityList rows={filtered} showMemberName emptyMessage="No activity matches these filters." />
       </section>
 
       <section className="flex flex-col gap-3">
