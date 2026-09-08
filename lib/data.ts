@@ -428,11 +428,23 @@ const attendanceDateFormat = new Intl.DateTimeFormat("en-CA", {
 /** One feed row per meeting this member was marked attended/absent/substitute for. */
 async function getAttendanceRows(ownerId: string): Promise<ActivityRow[]> {
   const supabase = await createClient()
-  const { data, error } = await supabase
+
+  const base = `id, meeting_start, meeting_title, status, owner:members!meeting_attendance_member_id_fkey(${MEMBER_FIELDS})`
+  const withName = await supabase
     .from("meeting_attendance")
-    .select(`id, meeting_start, meeting_title, status, owner:members!meeting_attendance_member_id_fkey(${MEMBER_FIELDS})`)
+    .select(`${base}, substitute_name`)
     .eq("member_id", ownerId)
     .order("meeting_start", { ascending: false })
+
+  // Pre-012 fallback: retry without substitute_name so the feed still renders
+  // if the column has not been added yet.
+  const { data, error } = withName.error
+    ? await supabase
+        .from("meeting_attendance")
+        .select(base)
+        .eq("member_id", ownerId)
+        .order("meeting_start", { ascending: false })
+    : withName
 
   if (error) {
     console.log("[v0] getAttendanceRows error:", error.message)
@@ -445,6 +457,7 @@ async function getAttendanceRows(ownerId: string): Promise<ActivityRow[]> {
       meeting_start: string
       meeting_title: string
       status: "attended" | "absent" | "substitute"
+      substitute_name?: string | null
       owner: NamedMember | null
     }
     const owner = named(row.owner)
@@ -465,6 +478,7 @@ async function getAttendanceRows(ownerId: string): Promise<ActivityRow[]> {
       hours: null,
       notes: null,
       attendanceStatus: row.status,
+      substituteName: row.substitute_name ?? null,
     }
   })
 }

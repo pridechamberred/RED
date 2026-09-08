@@ -28,6 +28,12 @@ export type RosterEntry = {
   name: string
   detail: string | null
   status: AttendanceMark
+  /**
+   * Free-text name of the stand-in, when status is `substitute` and an admin
+   * typed one. Null in every other case — the DB constraint guarantees a name
+   * cannot linger on a non-substitute row.
+   */
+  substituteName: string | null
 }
 
 export type GuestEntry = RosterEntry & { invitedBy: string }
@@ -73,30 +79,45 @@ type AttendanceRow = {
   member_id: string | null
   guest_invitation_id: string | null
   status: AttendanceStatus
+  substitute_name: string | null
 }
+
+type Mark = { status: AttendanceStatus; substituteName: string | null }
 
 /**
  * Existing marks for a meeting, keyed by `m:<memberId>` / `g:<guestId>`.
  *
  * Returns an empty map (everything "not recorded") if the table is unavailable,
- * so a missing migration degrades to a blank register rather than a crash.
+ * so a missing migration degrades to a blank register rather than a crash. The
+ * `substitute_name` select is likewise tolerant: if column 012 has not been
+ * applied yet the query errors and we fall back to statuses without names,
+ * rather than the whole register failing to load.
  */
-async function getMarks(meetingId: string): Promise<Map<string, AttendanceStatus>> {
+async function getMarks(meetingId: string): Promise<Map<string, Mark>> {
   const supabase = await createClient()
-  const { data, error } = await supabase
+  const marks = new Map<string, Mark>()
+
+  const withName = await supabase
     .from("meeting_attendance")
-    .select("member_id, guest_invitation_id, status")
+    .select("member_id, guest_invitation_id, status, substitute_name")
     .eq("meeting_uid", meetingId)
 
-  if (error) {
-    console.error("getMarks error:", error.message)
-    return new Map()
+  // Pre-012 fallback: retry without the new column so a register still renders.
+  const result = withName.error
+    ? await supabase
+        .from("meeting_attendance")
+        .select("member_id, guest_invitation_id, status")
+        .eq("meeting_uid", meetingId)
+    : withName
+
+  if (result.error) {
+    console.error("getMarks error:", result.error.message)
+    return marks
   }
 
-  const marks = new Map<string, AttendanceStatus>()
-  for (const row of (data ?? []) as AttendanceRow[]) {
+  for (const row of (result.data ?? []) as AttendanceRow[]) {
     const key = row.member_id ? `m:${row.member_id}` : `g:${row.guest_invitation_id}`
-    marks.set(key, row.status)
+    marks.set(key, { status: row.status, substituteName: row.substitute_name ?? null })
   }
   return marks
 }
@@ -141,19 +162,25 @@ export async function getRegister(meeting: RegisterMeeting): Promise<{
   if (membersResult.error) console.error("getRegister members error:", membersResult.error.message)
   if (guestsResult.error) console.error("getRegister guests error:", guestsResult.error.message)
 
-  const members: RosterEntry[] = ((membersResult.data ?? []) as MemberRow[]).map((m) => ({
-    id: m.id,
-    name: memberName(m),
-    detail: m.company,
-    status: marks.get(`m:${m.id}`) ?? null,
-  }))
+  const members: RosterEntry[] = ((membersResult.data ?? []) as MemberRow[]).map((m) => {
+    const mark = marks.get(`m:${m.id}`)
+    return {
+      id: m.id,
+      name: memberName(m),
+      detail: m.company,
+      status: mark?.status ?? null,
+      substituteName: mark?.substituteName ?? null,
+    }
+  })
 
   const guests: GuestEntry[] = ((guestsResult.data ?? []) as unknown as GuestRow[]).map((g) => ({
     id: g.id,
     name: g.guest_name,
     detail: g.guest_email,
     invitedBy: g.inviter ? memberName(g.inviter) : "a member",
-    status: marks.get(`g:${g.id}`) ?? null,
+    // Guests are never substitutes, so this is always null for them.
+    status: marks.get(`g:${g.id}`)?.status ?? null,
+    substituteName: null,
   }))
 
   return { members, guests }

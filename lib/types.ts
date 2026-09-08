@@ -125,6 +125,8 @@ export type ActivityRow = {
    * category and must not be rendered as either attended or absent.
    */
   attendanceStatus?: "attended" | "absent" | "substitute"
+  /** Free-text stand-in name, only ever set on a substitute attendance row. */
+  substituteName?: string | null
 }
 
 /**
