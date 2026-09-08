@@ -80,6 +80,7 @@ export default async function AttendanceRegisterPage({
                   subjectId={member.id}
                   name={member.name}
                   initial={member.status}
+                  initialSubstituteName={member.substituteName}
                 />
               </li>
             ))}

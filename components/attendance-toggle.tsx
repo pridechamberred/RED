@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Check, X, Users, RotateCcw } from "lucide-react"
 import { setAttendance } from "@/app/actions"
@@ -33,6 +33,8 @@ const STATUS_ACTIVE: Record<AttendanceStatus, string> = {
   substitute: "bg-muted-foreground text-background",
 }
 
+const SUBSTITUTE_NAME_MAX = 120
+
 /**
  * Attendance control: Attended, Absent, Substitute (members only), or neither.
  *
@@ -40,6 +42,10 @@ const STATUS_ACTIVE: Record<AttendanceStatus, string> = {
  * ruled on this person yet, which reports must not confuse with a confirmed
  * absence. Clearing is therefore offered explicitly rather than by toggling the
  * active option off, which would be ambiguous.
+ *
+ * When Substitute is active an optional free-text box appears for the stand-in's
+ * name. It saves on blur / Enter rather than per keystroke — the register is a
+ * long column of controls and one write per keypress would be needless churn.
  */
 export function AttendanceToggle({
   meetingId,
@@ -47,6 +53,7 @@ export function AttendanceToggle({
   subjectId,
   name,
   initial,
+  initialSubstituteName = null,
 }: {
   meetingId: string
   subjectKind: "member" | "guest"
@@ -54,18 +61,56 @@ export function AttendanceToggle({
   /** Used for the screen-reader label, so each control is distinguishable. */
   name: string
   initial: AttendanceMark
+  /** Only meaningful for members marked substitute; null otherwise. */
+  initialSubstituteName?: string | null
 }) {
   const [mark, setMark] = useState<AttendanceMark>(initial)
+  const [subName, setSubName] = useState(initialSubstituteName ?? "")
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+
+  // The last name value we actually persisted, so a blur with no real change
+  // (e.g. tabbing straight through the field) does not fire a redundant save.
+  const savedSubName = useRef(initialSubstituteName ?? "")
+  const subInputRef = useRef<HTMLInputElement>(null)
 
   // Substitute applies to members only: a one-off visitor either turned up or
   // didn't. The server enforces this too, so hiding it here is presentation,
   // not the security boundary.
   const statuses = subjectKind === "member" ? MEMBER_STATUSES : GUEST_STATUSES
 
-  function submit(value: AttendanceStatus | "clear") {
+  // Focus the name box the moment Substitute becomes active by a click, so an
+  // admin can type straight away. Skipped on first render (the effect's deps
+  // start equal) so existing substitute rows do not steal focus on page load.
+  const wasSubstitute = useRef(mark === "substitute")
+  useEffect(() => {
+    if (mark === "substitute" && !wasSubstitute.current) subInputRef.current?.focus()
+    wasSubstitute.current = mark === "substitute"
+  }, [mark])
+
+  function persist(status: AttendanceStatus | "clear", nameValue: string) {
+    const form = new FormData()
+    form.set("meetingId", meetingId)
+    form.set("subjectKind", subjectKind)
+    form.set("subjectId", subjectId)
+    form.set("value", status)
+    form.set("substituteName", nameValue)
+
+    startTransition(async () => {
+      const result = await setAttendance(form)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      // Remember what stuck, so the next blur can tell a real edit from a no-op.
+      savedSubName.current = status === "substitute" ? nameValue.trim() : ""
+      setError(null)
+      router.refresh()
+    })
+  }
+
+  function choose(value: AttendanceStatus | "clear") {
     const next = value === "clear" ? null : value
     if (next === mark) return
 
@@ -73,26 +118,44 @@ export function AttendanceToggle({
     setMark(next) // optimistic — a register is a lot of taps in a row
     setError(null)
 
+    // Leaving Substitute discards any typed name, matching the server, which
+    // forces the column to null for every non-substitute status.
+    const nameForWrite = value === "substitute" ? subName.trim() : ""
+    if (value !== "substitute") setSubName("")
+
+    // Roll the optimistic status back if the write fails.
+    const form = new FormData()
+    form.set("meetingId", meetingId)
+    form.set("subjectKind", subjectKind)
+    form.set("subjectId", subjectId)
+    form.set("value", value)
+    form.set("substituteName", nameForWrite)
+
     startTransition(async () => {
-      const form = new FormData()
-      form.set("meetingId", meetingId)
-      form.set("subjectKind", subjectKind)
-      form.set("subjectId", subjectId)
-      form.set("value", value)
-
       const result = await setAttendance(form)
-
       if (!result.ok) {
         setMark(previous)
         setError(result.error)
         return
       }
+      savedSubName.current = value === "substitute" ? nameForWrite : ""
       router.refresh()
     })
   }
 
+  function commitName() {
+    if (mark !== "substitute") return
+    const trimmed = subName.trim()
+    if (trimmed === savedSubName.current) return // nothing actually changed
+    if (trimmed.length > SUBSTITUTE_NAME_MAX) {
+      setError(`That substitute name is too long (${SUBSTITUTE_NAME_MAX} characters max).`)
+      return
+    }
+    persist("substitute", trimmed)
+  }
+
   return (
-    <div className="flex shrink-0 flex-col items-end gap-1">
+    <div className="flex shrink-0 flex-col items-end gap-1.5">
       <div
         role="group"
         aria-label={`Attendance for ${name}`}
@@ -108,7 +171,7 @@ export function AttendanceToggle({
             <button
               key={status}
               type="button"
-              onClick={() => submit(status)}
+              onClick={() => choose(status)}
               aria-pressed={active}
               disabled={pending}
               className={cn(
@@ -123,12 +186,34 @@ export function AttendanceToggle({
         })}
       </div>
 
+      {/* Optional stand-in name, shown only while Substitute is the active mark. */}
+      {mark === "substitute" ? (
+        <input
+          ref={subInputRef}
+          type="text"
+          value={subName}
+          onChange={(e) => setSubName(e.target.value)}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              e.preventDefault()
+              subInputRef.current?.blur()
+            }
+          }}
+          maxLength={SUBSTITUTE_NAME_MAX}
+          disabled={pending}
+          placeholder="Substitute's name (optional)"
+          aria-label={`Substitute's name for ${name}`}
+          className="w-56 max-w-[70vw] rounded-lg border border-border bg-background px-3 py-1.5 text-right text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+      ) : null}
+
       {mark === null ? (
         <span className="pr-1 text-[0.6875rem] font-medium text-muted-foreground">Not recorded</span>
       ) : (
         <button
           type="button"
-          onClick={() => submit("clear")}
+          onClick={() => choose("clear")}
           disabled={pending}
           className="flex items-center gap-1 pr-1 text-[0.6875rem] font-medium text-muted-foreground transition-colors hover:text-foreground"
         >

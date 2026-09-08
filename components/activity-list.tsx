@@ -110,6 +110,13 @@ export function ActivityList({
                   {ATTENDANCE_BADGE[row.attendanceStatus].label}
                 </span>
               ) : null}
+              {row.type === "meeting_attendance" &&
+              row.attendanceStatus === "substitute" &&
+              row.substituteName ? (
+                <span className="text-xs leading-relaxed text-muted-foreground">
+                  Substitute: {row.substituteName}
+                </span>
+              ) : null}
               {row.type === "done_deal" && row.referralSourceLabel ? (
                 <span className="text-xs leading-relaxed text-muted-foreground">
                   Referral from: {row.referralSourceLabel}

@@ -665,19 +665,30 @@ export async function setAttendance(form: FormData): Promise<ActionResult> {
   const subjectKind = str(form, "subjectKind")
   const subjectId = str(form, "subjectId")
   const value = str(form, "value")
-
+  
   if (subjectKind !== "member" && subjectKind !== "guest") {
-    return { ok: false, error: GENERIC_ERROR }
+  return { ok: false, error: GENERIC_ERROR }
   }
   if (value !== "attended" && value !== "absent" && value !== "substitute" && value !== "clear") {
-    return { ok: false, error: GENERIC_ERROR }
+  return { ok: false, error: GENERIC_ERROR }
   }
   // "Substitute" is a members-only concept — a one-off visitor either turned up
   // or didn't. Enforced here as well as hidden in the UI, so a tampered request
   // can't put a guest into a state the product doesn't define.
   if (value === "substitute" && subjectKind !== "member") {
-    return { ok: false, error: GENERIC_ERROR }
+  return { ok: false, error: GENERIC_ERROR }
   }
+
+  // Optional free-text stand-in name. Only meaningful for a substitute; for any
+  // other status it is forced to null so a stale name cannot survive a status
+  // change (the DB check constraint enforces the same invariant). Trimmed and
+  // capped to match the column constraint, so an over-long value is rejected
+  // here with a friendly message rather than as a raw DB error.
+  const rawSubName = str(form, "substituteName").trim()
+  if (value === "substitute" && rawSubName.length > 120) {
+  return { ok: false, error: "That substitute name is too long (120 characters max)." }
+  }
+  const substituteName = value === "substitute" && rawSubName.length > 0 ? rawSubName : null
 
   // Validates the id is a real meeting still inside the register window, and
   // recovers its group/title/start from the calendar rather than the form.
@@ -744,24 +755,52 @@ export async function setAttendance(form: FormData): Promise<ActionResult> {
     .eq(subjectColumn, subjectId)
     .maybeSingle()
 
-  const error = existing
-    ? (
-        await supabase
-          .from("meeting_attendance")
-          .update({ status, recorded_by: me.id })
-          .eq("id", (existing as { id: string }).id)
-      ).error
-    : (
-        await supabase.from("meeting_attendance").insert({
-          meeting_uid: meeting.id,
-          meeting_start: meeting.startISO,
-          meeting_title: meeting.title,
-          sub_group: meeting.subGroup,
-          [subjectColumn]: subjectId,
-          status,
-          recorded_by: me.id,
-        })
-      ).error
+  // `substitute_name` is written on every path (not just when set), so moving a
+  // member from Substitute to Attended/Absent clears any previously typed name.
+  //
+  // `writeRow` optionally includes that column. Pre-012 the column does not
+  // exist, so a first attempt including it fails; we then retry without it. That
+  // keeps ALL attendance recording — attended/absent included — working if this
+  // code is deployed before migration 012 is run, at the cost of not persisting
+  // the stand-in name until it is. Matches the read-side fallbacks in getMarks /
+  // getAttendanceRows.
+  //
+  // Two error shapes mean "no such column": Postgres `42703` (raised by a
+  // SELECT) and PostgREST `PGRST204` — "could not find the column in the schema
+  // cache" — which is what a write with an unknown column in the body returns.
+  // We match either code, or the column name in the message as a last resort.
+  function isMissingColumn(err: { code?: string; message?: string } | null): boolean {
+    if (!err) return false
+    return err.code === "42703" || err.code === "PGRST204" || Boolean(err.message?.includes("substitute_name"))
+  }
+
+  async function writeRow(withSubstituteName: boolean) {
+    const base = {
+      status,
+      recorded_by: me!.id,
+      ...(withSubstituteName ? { substitute_name: substituteName } : {}),
+    }
+    if (existing) {
+      return supabase
+        .from("meeting_attendance")
+        .update(base)
+        .eq("id", (existing as { id: string }).id)
+    }
+    return supabase.from("meeting_attendance").insert({
+      meeting_uid: meeting!.id,
+      meeting_start: meeting!.startISO,
+      meeting_title: meeting!.title,
+      sub_group: meeting!.subGroup,
+      [subjectColumn]: subjectId,
+      ...base,
+    })
+  }
+
+  let { error } = await writeRow(true)
+  if (isMissingColumn(error)) {
+    console.error("setAttendance: substitute_name missing, run migration 012. Saving status only.")
+    ;({ error } = await writeRow(false))
+  }
 
   if (error) {
     console.error("setAttendance error:", error.message)
