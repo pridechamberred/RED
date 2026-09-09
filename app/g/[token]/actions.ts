@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { sendGuestRegisteredEmail, sendGuestRegisteredHostEmail } from "@/lib/email"
 import { getInviteHost, isValidInviteToken } from "@/lib/invite-link"
 import { GUEST_MEETING_LIMIT, getMeetingOptions, type MeetingOption } from "@/lib/meeting-options"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -121,6 +122,40 @@ export async function registerGuest(form: FormData): Promise<GuestRegisterResult
   // The member's own tallies and the admin dashboard read this table, so their
   // cached pages have to be dropped or the new guest will not show up.
   revalidatePath("/", "layout")
+
+  // Two emails now the guest is saved: a confirmation to the guest, and a
+  // heads-up to the member whose QR code they used. Both run only on a genuinely
+  // new registration (the 23505 path above returned already), and neither can
+  // fail the registration — the row is committed and `deliver` logs any problem
+  // loudly. The host's email is fetched here rather than carried on InviteHost,
+  // which deliberately omits it so the public page never holds a member address.
+  const { data: hostRow } = await supabase.from("members").select("email").eq("id", host.id).maybeSingle()
+
+  const emails: Promise<unknown>[] = [
+    sendGuestRegisteredEmail({
+      to: guestEmail,
+      guestName,
+      hostName: host_name,
+      subGroup,
+      meetingLabel: meeting.label,
+      meetingLocation: meeting.location,
+    }),
+  ]
+  if (hostRow?.email) {
+    emails.push(
+      sendGuestRegisteredHostEmail({
+        to: hostRow.email,
+        hostFirstName: host.first_name,
+        guestName,
+        guestCompany: guestCompany || null,
+        meetingLabel: meeting.label,
+        meetingLocation: meeting.location,
+      }),
+    )
+  } else {
+    console.log(`[v0] registerGuest: no email on host ${host.id}, inviter notification not sent.`)
+  }
+  await Promise.allSettled(emails)
 
   return {
     ok: true,

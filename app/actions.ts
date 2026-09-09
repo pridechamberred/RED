@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server"
 import { RECOVERY_COOKIE } from "@/lib/auth-recovery"
 import { getCurrentMember } from "@/lib/data"
 import {
+  sendGuestInviteEmail,
   sendOfflineReferralEmail,
   sendReferralEmail,
   sendReferredPersonEmail,
@@ -636,18 +637,32 @@ export async function inviteGuest(form: FormData): Promise<ActionResult> {
   })
 
   if (error) {
-    console.error("inviteGuest error:", error.message)
-    return { ok: false, error: GENERIC_ERROR }
+  console.error("inviteGuest error:", error.message)
+  return { ok: false, error: GENERIC_ERROR }
   }
-
+  
   revalidateActivity()
+
+  // The guest is saved either way, so a failed email must never turn this into
+  // an error — the note tells the member to follow up by hand when it does.
+  const { sent } = await sendGuestInviteEmail({
+  to: guestEmail,
+  guestName,
+  inviterName: memberName(me),
+  inviterCompany: me.company,
+  subGroup: subGroup as SubGroup,
+  meetingLabel: meeting?.label ?? null,
+  meetingLocation: meeting?.location ?? null,
+  })
+
+  const savedFor = meeting ? meeting.label : `${subGroup}${" (no meeting date set yet)"}`
   return {
-    ok: true,
-    note: meeting
-      ? `${guestName} is saved as a guest for ${meeting.label}. Email invitations aren't switched on yet, so please let them know directly for now.`
-      : `${guestName} is saved as a guest for ${subGroup}. No meeting date is set yet, and email invitations aren't switched on, so please let them know directly for now.`,
+  ok: true,
+  note: sent
+  ? `${guestName} is saved as a guest for ${savedFor}, and we've emailed them an invitation.`
+  : `${guestName} is saved as a guest for ${savedFor}, but we couldn't email their invitation — please let them know directly.`,
   }
-}
+  }
 
 /**
  * Records (or clears) one person's attendance at one meeting.

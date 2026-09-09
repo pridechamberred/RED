@@ -629,6 +629,287 @@ export async function sendReferredPersonEmail(input: ReferredPersonEmailInput): 
 }
 
 /**
+ * The three guest emails below all describe a meeting. The picker label already
+ * reads "RED Central — Tue, Sep 8, 11:30 AM EDT" (title + date), so it is shown
+ * as a single "Meeting" line, with the venue on its own "Where" line when known.
+ */
+function meetingBoxHtml(meetingLabel: string, meetingLocation: string | null, e: (s: string) => string) {
+  const row = (label: string, value: string) => `
+    <tr>
+      <td style="padding:8px 0;color:#6d6d68;font-size:14px;width:84px;vertical-align:top;">${e(label)}</td>
+      <td style="padding:8px 0;color:#17171a;font-size:14px;font-weight:600;vertical-align:top;">${e(value)}</td>
+    </tr>`
+  const rows = [row("Meeting", meetingLabel), meetingLocation ? row("Where", meetingLocation) : ""].join("")
+  return `
+    <div style="background:#fbfbfa;border:1px solid #e6e5e1;border-radius:12px;padding:8px 18px;margin:0 0 20px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+    </div>`
+}
+
+function meetingBoxText(meetingLabel: string, meetingLocation: string | null) {
+  return [`Meeting: ${meetingLabel}`, meetingLocation ? `Where:   ${meetingLocation}` : null]
+    .filter((line) => line !== null)
+    .join("\n")
+}
+
+/** Header block for guest-facing mail, branded The Pride Chamber rather than incREDible. */
+function chamberHeader() {
+  return `
+      <tr>
+        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
+          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">The Pride Chamber</span>
+          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">RED networking group</span>
+        </td>
+      </tr>`
+}
+
+/**
+ * Sent to a prospective guest when a member fills in the "invite a guest" form.
+ *
+ * Goes to an outsider's inbox, so it follows the referred-person email's rules:
+ * The Pride Chamber branding rather than the internal incREDible tool, a warm
+ * invitation, and no one's contact details. The member may not have picked a
+ * meeting yet, in which case it promises the details rather than stating them.
+ */
+type GuestInviteEmailInput = {
+  to: string
+  guestName: string
+  inviterName: string
+  inviterCompany: string | null
+  subGroup: string
+  meetingLabel: string | null
+  meetingLocation: string | null
+}
+
+function buildGuestInviteHtml(input: GuestInviteEmailInput) {
+  const e = escapeHtml
+  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
+  const from = input.inviterCompany ? `${e(input.inviterName)} of ${e(input.inviterCompany)}` : e(input.inviterName)
+  const detailBlock = input.meetingLabel
+    ? meetingBoxHtml(input.meetingLabel, input.meetingLocation, e)
+    : `<p style="${p}"><strong>${e(input.inviterName)}</strong> will be in touch with the date and the rest of the details shortly.</p>`
+
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
+      ${chamberHeader()}
+      <tr>
+        <td style="padding:28px;">
+          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">You&#39;re invited</p>
+          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">
+            ${e(input.inviterName)} has invited you to a RED meeting
+          </h1>
+          <p style="${p}">
+            Dear ${e(input.guestName)}, ${from} would love for you to come along as their guest to
+            <strong>${e(input.subGroup)}</strong>, part of The Pride Chamber&#39;s RED networking group.
+          </p>
+          ${detailBlock}
+          <p style="${p}">
+            RED is a friendly circle of business owners who meet to support one another and pass real
+            business between them. Come and see what it&#39;s about — there&#39;s no pressure and no cost to visit.
+          </p>
+          <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">
+            Warm regards,<br />
+            The team at ${e(input.subGroup)}
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
+function buildGuestInviteText(input: GuestInviteEmailInput) {
+  const from = input.inviterCompany ? `${input.inviterName} of ${input.inviterCompany}` : input.inviterName
+  return [
+    `YOU'RE INVITED — The Pride Chamber RED group`,
+    ``,
+    `Dear ${input.guestName},`,
+    ``,
+    `${from} would love for you to come along as their guest to ${input.subGroup}, part of The Pride Chamber's RED networking group.`,
+    ``,
+    input.meetingLabel
+      ? meetingBoxText(input.meetingLabel, input.meetingLocation)
+      : `${input.inviterName} will be in touch with the date and the rest of the details shortly.`,
+    ``,
+    `RED is a friendly circle of business owners who meet to support one another and pass real business between them. Come and see what it's about — there's no pressure and no cost to visit.`,
+    ``,
+    `Warm regards,`,
+    `The team at ${input.subGroup}`,
+  ].join("\n")
+}
+
+/**
+ * Tells a prospective guest that their invitation is on its way.
+ *
+ * Fired the moment a member completes the invite form, so a failure must never
+ * block that member — `deliver` logs loudly instead of throwing.
+ */
+export async function sendGuestInviteEmail(input: GuestInviteEmailInput): Promise<DeliveryResult> {
+  return deliver(
+    "guest invitation",
+    {
+      to: input.to,
+      subject: `${input.inviterName} invited you to a Pride Chamber RED meeting`,
+      html: buildGuestInviteHtml(input),
+      text: buildGuestInviteText(input),
+    },
+    () => console.log(`[v0] Would email ${input.to} a guest invitation from ${input.inviterName}`),
+  )
+}
+
+/**
+ * Confirmation sent to a guest who self-registers by scanning a member's QR
+ * code. Guest-facing, so The Pride Chamber branding; the meeting is always
+ * known on this path, so it is always shown.
+ */
+type GuestRegisteredGuestEmailInput = {
+  to: string
+  guestName: string
+  hostName: string
+  subGroup: string
+  meetingLabel: string
+  meetingLocation: string | null
+}
+
+function buildGuestRegisteredHtml(input: GuestRegisteredGuestEmailInput) {
+  const e = escapeHtml
+  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
+      ${chamberHeader()}
+      <tr>
+        <td style="padding:28px;">
+          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">You&#39;re registered</p>
+          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">You&#39;re all set, ${e(input.guestName)}</h1>
+          <p style="${p}">
+            Thanks for registering. You&#39;re confirmed as <strong>${e(input.hostName)}</strong>&#39;s guest at:
+          </p>
+          ${meetingBoxHtml(input.meetingLabel, input.meetingLocation, e)}
+          <p style="${p}">
+            We look forward to welcoming you. If anything changes, just let ${e(input.hostName)} know.
+          </p>
+          <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">
+            Warm regards,<br />
+            The team at ${e(input.subGroup)}
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
+function buildGuestRegisteredText(input: GuestRegisteredGuestEmailInput) {
+  return [
+    `YOU'RE REGISTERED — The Pride Chamber RED group`,
+    ``,
+    `You're all set, ${input.guestName}.`,
+    ``,
+    `Thanks for registering. You're confirmed as ${input.hostName}'s guest at:`,
+    ``,
+    meetingBoxText(input.meetingLabel, input.meetingLocation),
+    ``,
+    `We look forward to welcoming you. If anything changes, just let ${input.hostName} know.`,
+    ``,
+    `Warm regards,`,
+    `The team at ${input.subGroup}`,
+  ].join("\n")
+}
+
+export async function sendGuestRegisteredEmail(input: GuestRegisteredGuestEmailInput): Promise<DeliveryResult> {
+  return deliver(
+    "guest registration confirmation",
+    {
+      to: input.to,
+      subject: `You're registered as ${input.hostName}'s guest`,
+      html: buildGuestRegisteredHtml(input),
+      text: buildGuestRegisteredText(input),
+    },
+    () => console.log(`[v0] Would email ${input.to} a registration confirmation for ${input.hostName}'s guest`),
+  )
+}
+
+/**
+ * Tells the inviting member that a guest used their QR code and registered.
+ *
+ * Member-facing, so this one carries the internal incREDible branding, unlike
+ * the two guest-facing emails above.
+ */
+type GuestRegisteredHostEmailInput = {
+  to: string
+  hostFirstName: string
+  guestName: string
+  guestCompany: string | null
+  meetingLabel: string
+  meetingLocation: string | null
+}
+
+function buildHostNotifiedHtml(input: GuestRegisteredHostEmailInput) {
+  const e = escapeHtml
+  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
+  const who = input.guestCompany ? `${e(input.guestName)} of ${e(input.guestCompany)}` : e(input.guestName)
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
+      <tr>
+        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
+          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">inc<span style="color:#cf2c2c;">RED</span>ible</span>
+          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">The Pride Chamber&#39;s RED Group activity tracker</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:28px;">
+          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">Guest registered</p>
+          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">${who} is coming!</h1>
+          <p style="${p}">
+            Hi ${e(input.hostFirstName)}, good news — <strong>${who}</strong> scanned your invite QR code and
+            registered to attend:
+          </p>
+          ${meetingBoxHtml(input.meetingLabel, input.meetingLocation, e)}
+          <p style="${p}">
+            They&#39;ve been added to your guest tally in incREDible. Nice work bringing someone along!
+          </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
+function buildHostNotifiedText(input: GuestRegisteredHostEmailInput) {
+  const who = input.guestCompany ? `${input.guestName} of ${input.guestCompany}` : input.guestName
+  return [
+    `GUEST REGISTERED — incREDible`,
+    ``,
+    `Hi ${input.hostFirstName},`,
+    ``,
+    `Good news — ${who} scanned your invite QR code and registered to attend:`,
+    ``,
+    meetingBoxText(input.meetingLabel, input.meetingLocation),
+    ``,
+    `They've been added to your guest tally in incREDible. Nice work bringing someone along!`,
+  ].join("\n")
+}
+
+export async function sendGuestRegisteredHostEmail(input: GuestRegisteredHostEmailInput): Promise<DeliveryResult> {
+  return deliver(
+    "guest-registered host notification",
+    {
+      to: input.to,
+      subject: `${input.guestName} registered as your guest`,
+      html: buildHostNotifiedHtml(input),
+      text: buildHostNotifiedText(input),
+    },
+    () => console.log(`[v0] Would email ${input.to} that ${input.guestName} registered as their guest`),
+  )
+}
+
+/**
  * Sends the referral notification. The referral itself is already saved by the
  * time this runs, so a failure here never blocks the member — but it is logged
  * loudly by `deliver` rather than passing for normal operation.
