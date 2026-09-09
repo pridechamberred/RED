@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { cookies, headers } from "next/headers"
+import { cookies } from "next/headers"
+import { getPublicOrigin } from "@/lib/site-url"
 import { createClient } from "@/lib/supabase/server"
 import { RECOVERY_COOKIE } from "@/lib/auth-recovery"
 import { getCurrentMember } from "@/lib/data"
 import {
+  sendGuestInviteEmail,
   sendOfflineReferralEmail,
   sendReferralEmail,
   sendReferredPersonEmail,
@@ -28,20 +30,6 @@ import { NO_MEETING } from "@/lib/meeting-constants"
 export type ActionResult = { ok: true; note?: string } | { ok: false; error: string }
 
 const GENERIC_ERROR = "We couldn't save that. Please try again."
-
-/**
- * This deployment's own origin, for links inside emails.
- *
- * Same approach as the password-reset action: read it off the incoming request
- * rather than hardcoding a domain, so preview deployments link to themselves
- * instead of sending testers to production.
- */
-async function getOrigin() {
-  const h = await headers()
-  const host = h.get("x-forwarded-host") ?? h.get("host")
-  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https")
-  return `${proto}://${host}`
-}
 
 /** Matches the length check on public.done_deal_notes.note. */
 const DEAL_NOTE_MAX = 500
@@ -176,7 +164,7 @@ export async function recordVous(form: FormData): Promise<ActionResult> {
     // Straight at the prefilled form, so a member who is already signed in on
     // their phone lands on it directly. If they are signed out the proxy sends
     // them to login carrying this path in `next` and returns them here after.
-    const origin = await getOrigin()
+    const origin = await getPublicOrigin()
     const { sent } = await sendVousLoggedEmail({
       to: other.email,
       recipientFirstName: other.first_name,
@@ -636,18 +624,32 @@ export async function inviteGuest(form: FormData): Promise<ActionResult> {
   })
 
   if (error) {
-    console.error("inviteGuest error:", error.message)
-    return { ok: false, error: GENERIC_ERROR }
+  console.error("inviteGuest error:", error.message)
+  return { ok: false, error: GENERIC_ERROR }
   }
-
+  
   revalidateActivity()
+
+  // The guest is saved either way, so a failed email must never turn this into
+  // an error — the note tells the member to follow up by hand when it does.
+  const { sent } = await sendGuestInviteEmail({
+  to: guestEmail,
+  guestName,
+  inviterName: memberName(me),
+  inviterCompany: me.company,
+  subGroup: subGroup as SubGroup,
+  meetingLabel: meeting?.label ?? null,
+  meetingLocation: meeting?.location ?? null,
+  })
+
+  const savedFor = meeting ? meeting.label : `${subGroup}${" (no meeting date set yet)"}`
   return {
-    ok: true,
-    note: meeting
-      ? `${guestName} is saved as a guest for ${meeting.label}. Email invitations aren't switched on yet, so please let them know directly for now.`
-      : `${guestName} is saved as a guest for ${subGroup}. No meeting date is set yet, and email invitations aren't switched on, so please let them know directly for now.`,
+  ok: true,
+  note: sent
+  ? `${guestName} is saved as a guest for ${savedFor}, and we've emailed them an invitation.`
+  : `${guestName} is saved as a guest for ${savedFor}, but we couldn't email their invitation — please let them know directly.`,
   }
-}
+  }
 
 /**
  * Records (or clears) one person's attendance at one meeting.

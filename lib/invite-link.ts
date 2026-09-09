@@ -1,7 +1,7 @@
 import "server-only"
 
-import { headers } from "next/headers"
 import QRCode from "qrcode"
+import { getPublicOrigin } from "@/lib/site-url"
 import { createAdminClient } from "@/lib/supabase/admin"
 import type { SubGroup } from "@/lib/types"
 
@@ -66,23 +66,14 @@ export async function getInviteHost(token: string): Promise<InviteHost | null> {
 }
 
 /**
- * Absolute origin of the current request.
+ * The shareable URL a guest lands on after scanning.
  *
- * Read from the request headers rather than an env var so the link is correct
- * in the v0 preview, in Vercel previews and in production without any
- * configuration. `x-forwarded-host` is what Vercel sets; `host` is the
- * fallback for local dev.
+ * Uses the canonical public origin, not the request host: a token is printed on
+ * a business card and must always point at the branded production domain, never
+ * at whatever preview or alias generated the QR.
  */
-async function getOrigin(): Promise<string> {
-  const headerList = await headers()
-  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000"
-  const proto = headerList.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https")
-  return `${proto}://${host}`
-}
-
-/** The shareable URL a guest lands on after scanning. */
 export async function buildInviteUrl(token: string): Promise<string> {
-  return `${await getOrigin()}/g/${token}`
+  return `${await getPublicOrigin()}/g/${token}`
 }
 
 /**

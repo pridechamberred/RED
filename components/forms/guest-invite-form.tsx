@@ -143,7 +143,7 @@ export function GuestInviteForm({
       <SubmitButton pending={pending}>Invite Guest</SubmitButton>
 
       <p className="text-center text-xs leading-relaxed text-muted-foreground">
-        Email invitations and RSVPs are coming soon — for now this saves the guest so you can follow up yourself.
+        We&apos;ll email your guest an invitation as soon as you send this.
       </p>
     </form>
   )
