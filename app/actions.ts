@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { cookies, headers } from "next/headers"
+import { cookies } from "next/headers"
+import { getPublicOrigin } from "@/lib/site-url"
 import { createClient } from "@/lib/supabase/server"
 import { RECOVERY_COOKIE } from "@/lib/auth-recovery"
 import { getCurrentMember } from "@/lib/data"
@@ -29,20 +30,6 @@ import { NO_MEETING } from "@/lib/meeting-constants"
 export type ActionResult = { ok: true; note?: string } | { ok: false; error: string }
 
 const GENERIC_ERROR = "We couldn't save that. Please try again."
-
-/**
- * This deployment's own origin, for links inside emails.
- *
- * Same approach as the password-reset action: read it off the incoming request
- * rather than hardcoding a domain, so preview deployments link to themselves
- * instead of sending testers to production.
- */
-async function getOrigin() {
-  const h = await headers()
-  const host = h.get("x-forwarded-host") ?? h.get("host")
-  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https")
-  return `${proto}://${host}`
-}
 
 /** Matches the length check on public.done_deal_notes.note. */
 const DEAL_NOTE_MAX = 500
@@ -177,7 +164,7 @@ export async function recordVous(form: FormData): Promise<ActionResult> {
     // Straight at the prefilled form, so a member who is already signed in on
     // their phone lands on it directly. If they are signed out the proxy sends
     // them to login carrying this path in `next` and returns them here after.
-    const origin = await getOrigin()
+    const origin = await getPublicOrigin()
     const { sent } = await sendVousLoggedEmail({
       to: other.email,
       recipientFirstName: other.first_name,

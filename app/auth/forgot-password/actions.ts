@@ -1,7 +1,7 @@
 "use server"
 
-import { headers } from "next/headers"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { getPublicOrigin } from "@/lib/site-url"
 import { sendPasswordResetEmail } from "@/lib/email"
 
 /**
@@ -16,21 +16,6 @@ const LINK_LIFETIME = "1 hour"
 
 /** Minimum gap between reset emails for one address, in milliseconds. */
 const THROTTLE_MS = 60_000
-
-/**
- * Resolves this deployment's own origin from the incoming request.
- *
- * Deliberately NOT using NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL: that proxy
- * exists so links *Supabase itself* sends can reach the v0 sandbox. Here we
- * mint the token ourselves and put our own URL in the email, so Supabase never
- * does the redirecting and its allow-list is not involved at all.
- */
-async function getOrigin() {
-  const h = await headers()
-  const host = h.get("x-forwarded-host") ?? h.get("host")
-  const proto = h.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https")
-  return `${proto}://${host}`
-}
 
 export async function requestPasswordReset(email: string): Promise<Result> {
   const address = email.trim().toLowerCase()
@@ -88,7 +73,10 @@ export async function requestPasswordReset(email: string): Promise<Result> {
     return { ok: false, message: "We couldn't send that email just now. Please try again." }
   }
 
-  const origin = await getOrigin()
+  // Our own canonical origin, not NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL: we mint
+  // the recovery token ourselves and put our own URL in the email, so Supabase
+  // never does the redirecting and its allow-list is not involved at all.
+  const origin = await getPublicOrigin()
   const callback = new URL(`${origin}/auth/callback`)
   callback.searchParams.set("token_hash", link.properties.hashed_token)
   callback.searchParams.set("type", "recovery")
