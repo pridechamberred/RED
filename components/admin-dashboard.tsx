@@ -17,7 +17,7 @@ import {
   formatMoney,
   memberName,
 } from "@/lib/types"
-import { ChevronRight, ClipboardCheck, SlidersHorizontal, UserPlus } from "lucide-react"
+import { BarChart3, ChevronRight, ClipboardCheck, SlidersHorizontal, UserPlus } from "lucide-react"
 
 // Attendance never reaches this feed (it is per-member, not per-activity), so
 // offering it as a filter would be a permanently empty result.
@@ -117,24 +117,45 @@ export function AdminDashboard({
         <p className="text-sm leading-relaxed text-muted-foreground">{scopeLabel}</p>
       </header>
 
-      <Link
-        href="/admin/attendance"
-        className="flex items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-4 transition-colors hover:border-primary/40 hover:bg-accent/60"
-      >
-        <span
-          aria-hidden
-          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground"
+      <div className="flex flex-col gap-2.5">
+        <Link
+          href="/admin/attendance"
+          className="flex items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-4 transition-colors hover:border-primary/40 hover:bg-accent/60"
         >
-          <ClipboardCheck className="size-5" />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="font-semibold leading-tight">Attendance Record</span>
-          <span className="text-sm leading-relaxed text-muted-foreground">
-            Mark who came to each RED meeting
+          <span
+            aria-hidden
+            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground"
+          >
+            <ClipboardCheck className="size-5" />
           </span>
-        </span>
-        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      </Link>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="font-semibold leading-tight">Attendance Record</span>
+            <span className="text-sm leading-relaxed text-muted-foreground">
+              Mark who came to each RED meeting
+            </span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        </Link>
+
+        <Link
+          href="/admin/attendance/report"
+          className="flex items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-4 transition-colors hover:border-primary/40 hover:bg-accent/60"
+        >
+          <span
+            aria-hidden
+            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground"
+          >
+            <BarChart3 className="size-5" />
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="font-semibold leading-tight">Attendance Report</span>
+            <span className="text-sm leading-relaxed text-muted-foreground">
+              Meeting attendance by member, over any date range
+            </span>
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        </Link>
+      </div>
 
       <dl className="grid grid-cols-3 gap-2.5">
         {[
