@@ -1,7 +1,13 @@
 import "server-only"
 
 import { createClient } from "@/lib/supabase/server"
-import { CALENDAR_TIME_ZONE, getRecentMeetings, subGroupFromTitle, REGISTER_WINDOW_DAYS } from "@/lib/calendar"
+import {
+  CALENDAR_TIME_ZONE,
+  getMeetingsBetween,
+  getRecentMeetings,
+  subGroupFromTitle,
+  REGISTER_WINDOW_DAYS,
+} from "@/lib/calendar"
 import { memberName, type SubGroup } from "@/lib/types"
 import type { AttendanceMark, AttendanceStatus } from "@/lib/attendance-status"
 
@@ -244,4 +250,144 @@ export async function getRegisterSummaries(
   }
 
   return summaries
+}
+
+/** Meetings inside an arbitrary date range, with each one's sub-group resolved. */
+export async function getReportMeetings(fromDate: string, toDate: string): Promise<RegisterMeeting[]> {
+  const meetings = await getMeetingsBetween(fromDate, toDate)
+  return meetings.map(withSubGroup)
+}
+
+/** One member's attendance tally across a sub-group's meetings in the range. */
+export type MemberAttendanceReportRow = {
+  memberId: string
+  name: string
+  company: string | null
+  /** Meetings the sub-group held in range — the same for every member of it. */
+  held: number
+  attended: number
+  substitute: number
+  absent: number
+  /** Held meetings with no register row for this member. Never negative. */
+  notRegistered: number
+}
+
+/** The attendance report for a single sub-group. */
+export type SubGroupAttendanceReport = {
+  subGroup: SubGroup
+  meetingsHeld: number
+  members: MemberAttendanceReportRow[]
+}
+
+type ReportMemberRow = {
+  id: string
+  first_name: string
+  last_name: string
+  company: string | null
+  sub_group: SubGroup
+}
+
+/**
+ * Attendance-by-member report for one or more sub-groups over a date range.
+ *
+ * "Meetings held" comes from the calendar (what actually happened), while the
+ * per-status counts come from the register. A meeting with no register row for
+ * a member is counted as "not registered" — deliberately distinct from a
+ * recorded absence, matching how `AttendanceMark` models a missing row as null.
+ *
+ * `substitute` is reported on its own and never folded into attended or absent,
+ * consistent with the rest of the attendance feature.
+ *
+ * `subGroups` is passed by the caller so role scoping stays in one place: a
+ * sub-group admin asks only for their own group, a super-admin for any subset.
+ */
+export async function getAttendanceReport(opts: {
+  fromDate: string
+  toDate: string
+  subGroups: SubGroup[]
+}): Promise<SubGroupAttendanceReport[]> {
+  const { fromDate, toDate, subGroups } = opts
+  if (subGroups.length === 0) return []
+
+  const scope = new Set(subGroups)
+  const meetings = await getReportMeetings(fromDate, toDate)
+
+  // Group in-scope meeting ids by sub-group. Meetings whose title matches no
+  // sub-group carry a null group and are dropped — there is no roster for them.
+  const meetingIdsByGroup = new Map<SubGroup, string[]>()
+  for (const g of subGroups) meetingIdsByGroup.set(g, [])
+  for (const m of meetings) {
+    if (m.subGroup && scope.has(m.subGroup)) meetingIdsByGroup.get(m.subGroup)!.push(m.id)
+  }
+  const allMeetingIds = [...meetingIdsByGroup.values()].flat()
+
+  const supabase = await createClient()
+
+  // key `${meeting_uid}:${member_id}` -> status, fetched in chunks so a wide
+  // range with hundreds of meetings stays under a sane query-string length.
+  const statusByKey = new Map<string, AttendanceStatus>()
+  const CHUNK = 150
+  for (let i = 0; i < allMeetingIds.length; i += CHUNK) {
+    const slice = allMeetingIds.slice(i, i + CHUNK)
+    const { data, error } = await supabase
+      .from("meeting_attendance")
+      .select("meeting_uid, member_id, status")
+      .in("meeting_uid", slice)
+      .not("member_id", "is", null)
+
+    if (error) {
+      console.error("getAttendanceReport attendance error:", error.message)
+      continue
+    }
+    for (const row of (data ?? []) as { meeting_uid: string; member_id: string; status: AttendanceStatus }[]) {
+      statusByKey.set(`${row.meeting_uid}:${row.member_id}`, row.status)
+    }
+  }
+
+  const { data: memberData, error: memberError } = await supabase
+    .from("members")
+    .select("id, first_name, last_name, company, sub_group")
+    .in("sub_group", subGroups)
+    .order("first_name")
+
+  if (memberError) console.error("getAttendanceReport members error:", memberError.message)
+  const members = (memberData ?? []) as ReportMemberRow[]
+
+  // Preserve the caller's sub-group order in the output.
+  return subGroups.map((group) => {
+    const meetingIds = meetingIdsByGroup.get(group) ?? []
+    const rows: MemberAttendanceReportRow[] = members
+      .filter((m) => m.sub_group === group)
+      .map((m) => {
+        let attended = 0
+        let substitute = 0
+        let absent = 0
+        for (const meetingId of meetingIds) {
+          switch (statusByKey.get(`${meetingId}:${m.id}`)) {
+            case "attended":
+              attended += 1
+              break
+            case "substitute":
+              substitute += 1
+              break
+            case "absent":
+              absent += 1
+              break
+            // undefined -> no register row -> counted as not registered below.
+          }
+        }
+        return {
+          memberId: m.id,
+          name: memberName(m),
+          company: m.company,
+          held: meetingIds.length,
+          attended,
+          substitute,
+          absent,
+          notRegistered: meetingIds.length - attended - substitute - absent,
+        }
+      })
+
+    return { subGroup: group, meetingsHeld: meetingIds.length, members: rows }
+  })
 }

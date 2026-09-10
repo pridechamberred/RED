@@ -436,6 +436,40 @@ export async function getUpcomingMeetings(limit = 20): Promise<Meeting[]> {
   return collect(events, { from: new Date(), to: null, perSeries: limit + 8 }).slice(0, limit)
 }
 
+/** Parses a `YYYY-MM-DD` string to the UTC instant of a wall-clock time in `timeZone`. */
+function isoDateToInstant(
+  dateStr: string,
+  time: { hour: number; minute: number },
+  timeZone: string,
+): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr)
+  if (!match) return null
+  const [, y, m, d] = match
+  return wallTimeToUtc({ year: +y, month: +m, day: +d, hour: time.hour, minute: time.minute }, timeZone)
+}
+
+/**
+ * Every meeting between two calendar-local dates, oldest first.
+ *
+ * Unlike {@link getRecentMeetings} (a fixed trailing window), this takes an
+ * explicit inclusive range for reporting over an arbitrary period. `fromDate`
+ * and `toDate` are `YYYY-MM-DD` in the calendar's own timezone; the range is
+ * widened to the start of `fromDate` and the end of `toDate` so meetings on the
+ * boundary days are included whatever time of day they run.
+ */
+export async function getMeetingsBetween(fromDate: string, toDate: string): Promise<Meeting[]> {
+  const from = isoDateToInstant(fromDate, { hour: 0, minute: 0 }, CALENDAR_TIME_ZONE)
+  const to = isoDateToInstant(toDate, { hour: 23, minute: 59 }, CALENDAR_TIME_ZONE)
+  if (!from || !to || from.getTime() > to.getTime()) return []
+
+  const events = await fetchEvents()
+  // Enough occurrences per series to cover the span even for a weekly meeting,
+  // bounded so a pathological range cannot spin the expander.
+  const spanDays = Math.ceil((to.getTime() - from.getTime()) / 86_400_000)
+  const perSeries = Math.min(220, Math.ceil(spanDays / 6) + 8)
+  return collect(events, { from, to, perSeries })
+}
+
 /** How far back the attendance register looks. */
 export const REGISTER_WINDOW_DAYS = 31
 
