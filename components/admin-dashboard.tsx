@@ -18,7 +18,7 @@ import {
   memberName,
 } from "@/lib/types"
 import { filterActivityRows } from "@/lib/report-filters"
-import { ChevronRight, Download, SlidersHorizontal, UserPlus } from "lucide-react"
+import { CalendarCog, ChevronRight, Download, SlidersHorizontal, UserPlus } from "lucide-react"
 
 /** Reads the download filename the export route sets in Content-Disposition. */
 function filenameFromDisposition(disposition: string | null): string | null {
@@ -405,6 +405,28 @@ export function AdminDashboard({
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Activity feed</h2>
         <PaginatedActivityList rows={filtered} showMemberName emptyMessage="No activity matches these filters." />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            Pride Chamber events
+          </h2>
+          <Button
+            render={<Link href="/admin/pride-chamber" />}
+            nativeButton={false}
+            variant="outline"
+            size="sm"
+            className="h-9"
+          >
+            <CalendarCog className="size-4" aria-hidden />
+            Manage events
+          </Button>
+        </div>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Events imported from the chamber&apos;s public calendar populate the member attendance form. Review them or
+          trigger a manual sync.
+        </p>
       </section>
 
       <section className="flex flex-col gap-3">

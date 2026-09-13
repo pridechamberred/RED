@@ -37,6 +37,16 @@ export type MemberOption = {
   avatar_url: string | null
 }
 
+/** One eligible imported event, ready to show in the chamber-event dropdown. */
+export type PrideChamberEventOption = {
+  id: string
+  title: string
+  /** YYYY-MM-DD (Eastern). */
+  eventDate: string
+  /** Prebuilt "Title — Month D, YYYY" label. */
+  label: string
+}
+
 export type ActivityType =
   | "vous"
   | "referral"

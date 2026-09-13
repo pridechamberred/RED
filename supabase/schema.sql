@@ -156,6 +156,38 @@ create table if not exists public.chamber_events (
   created_at timestamptz not null default now()
 );
 
+-- Pride Chamber public-calendar events, imported by the daily scraper (migration
+-- 013). Members choose from these in the chamber-event form so the event name is
+-- the calendar's own rather than free text. Deduped on the GrowthZone source id.
+create table if not exists public.pride_chamber_events (
+  id           uuid primary key default gen_random_uuid(),
+  source_id    text not null unique,
+  title        text not null,
+  event_date   date not null,
+  detail_url   text,
+  is_active    boolean not null default true,
+  last_seen_at timestamptz not null default now(),
+  created_at   timestamptz not null default now()
+);
+
+-- One row per sync attempt, for admin diagnostics.
+create table if not exists public.pride_chamber_sync_runs (
+  id                 uuid primary key default gen_random_uuid(),
+  ran_at             timestamptz not null default now(),
+  ok                 boolean not null,
+  events_found       integer not null default 0,
+  events_upserted    integer not null default 0,
+  events_deactivated integer not null default 0,
+  error              text,
+  trigger            text not null default 'cron'
+);
+
+-- Links a chamber_events attendance row to the canonical imported event when the
+-- member picked one from the dropdown. Nullable: the manual fallback and every
+-- pre-013 historical row have none and keep their free-text event_name.
+alter table public.chamber_events
+  add column if not exists pride_chamber_event_id uuid references public.pride_chamber_events(id);
+
 -- Guests invited to attend a sub-group meeting. NOT one of the five tracked
 -- activity types: deliberately excluded from the activity feed, though the admin
 -- dashboard does report a "Guests invited" count. status is reserved for the
@@ -187,6 +219,8 @@ create index if not exists done_deal_notes_user_idx on public.done_deal_notes (u
 create index if not exists volunteering_user_idx on public.volunteering (user_id, date desc);
 create index if not exists chamber_events_user_idx on public.chamber_events (user_id, date desc);
 create index if not exists guest_invitations_inviter_idx on public.guest_invitations (inviter_user_id, created_at desc);
+create index if not exists pride_chamber_events_active_idx on public.pride_chamber_events (is_active, event_date desc);
+create index if not exists pride_chamber_sync_runs_ran_at_idx on public.pride_chamber_sync_runs (ran_at desc);
 
 -- ---------------------------------------------------------------------------
 -- 3. HELPER FUNCTIONS (security definer, so policies don't recurse on members)
@@ -305,6 +339,8 @@ alter table public.done_deal_notes enable row level security;
 alter table public.volunteering   enable row level security;
 alter table public.chamber_events enable row level security;
 alter table public.guest_invitations enable row level security;
+alter table public.pride_chamber_events    enable row level security;
+alter table public.pride_chamber_sync_runs enable row level security;
 
 -- MEMBERS: every signed-in member can find every other member (that is the
 -- whole point of the search box), but can only edit their own record.
@@ -424,6 +460,23 @@ create policy chamber_events_insert_own on public.chamber_events
 drop policy if exists chamber_events_delete_own on public.chamber_events;
 create policy chamber_events_delete_own on public.chamber_events
   for delete to authenticated using (user_id = public.current_member_id());
+
+-- PRIDE CHAMBER EVENTS (read-only for members; the service-role sync is the only
+-- writer and it bypasses RLS, so there are no member write policies).
+drop policy if exists pride_chamber_events_select on public.pride_chamber_events;
+create policy pride_chamber_events_select on public.pride_chamber_events
+  for select to authenticated using (true);
+
+-- Sync diagnostics: admins and super-admins only.
+drop policy if exists pride_chamber_sync_runs_select on public.pride_chamber_sync_runs;
+create policy pride_chamber_sync_runs_select on public.pride_chamber_sync_runs
+  for select to authenticated using (
+    exists (
+      select 1 from public.members m
+      where m.auth_user_id = auth.uid()
+        and m.role in ('admin', 'super-admin')
+    )
+  );
 
 -- GUEST INVITATIONS
 drop policy if exists guest_invitations_select on public.guest_invitations;
