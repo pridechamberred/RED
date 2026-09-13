@@ -6,7 +6,7 @@ import { cookies } from "next/headers"
 import { getPublicOrigin } from "@/lib/site-url"
 import { createClient } from "@/lib/supabase/server"
 import { RECOVERY_COOKIE } from "@/lib/auth-recovery"
-import { getCurrentMember } from "@/lib/data"
+import { getCurrentMember, getPrideChamberEventById } from "@/lib/data"
 import {
   sendGuestInviteEmail,
   sendOfflineReferralEmail,
@@ -52,6 +52,19 @@ function positiveNumber(raw: string) {
 function nonNegativeNumber(raw: string) {
   const n = Number(raw)
   return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+/**
+ * True when a write failed because `column` does not exist yet — i.e. its
+ * migration has not been run. A SELECT of a missing column reports Postgres
+ * `42703`, but an INSERT/UPDATE carrying an unknown column in the body reports
+ * PostgREST `PGRST204` ("could not find the column in the schema cache"). Match
+ * either code, or the column name in the message as a last resort, so callers
+ * can retry the write without the column.
+ */
+function isUnknownColumnError(err: { code?: string; message?: string } | null, column: string): boolean {
+  if (!err) return false
+  return err.code === "42703" || err.code === "PGRST204" || Boolean(err.message?.includes(column))
 }
 
 function isIsoDate(value: string) {
@@ -547,23 +560,51 @@ export async function recordChamberEvent(form: FormData): Promise<ActionResult> 
   const me = await getCurrentMember()
   if (!me) redirect("/auth/login")
 
-  const eventName = str(form, "eventName")
-  const date = str(form, "date")
   const notes = optional(form, "notes")
+  const prideChamberEventId = str(form, "prideChamberEventId")
 
-  if (!eventName) return { ok: false, error: "Please enter the event name." }
-  if (!dateWithinRange(date)) return { ok: false, error: "Please choose a valid date, today or earlier." }
+  // The event name and date are resolved one of two ways. When the member picks
+  // an imported event the name and date come from the authoritative record —
+  // looked up server-side so a tampered POST cannot store an arbitrary event
+  // name against a real id. The manual "can't find your event?" fallback keeps
+  // the old free-text + date path.
+  let eventName: string
+  let date: string
+  let linkedEventId: string | null = null
+
+  if (prideChamberEventId) {
+    const event = await getPrideChamberEventById(prideChamberEventId)
+    if (!event) {
+      return { ok: false, error: "That event is no longer available. Please pick another from the list." }
+    }
+    eventName = event.title
+    date = event.event_date
+    linkedEventId = event.id
+  } else {
+    eventName = str(form, "eventName")
+    date = str(form, "date")
+    if (!eventName) return { ok: false, error: "Please choose an event, or enter its name." }
+    if (!dateWithinRange(date)) return { ok: false, error: "Please choose a valid date, today or earlier." }
+  }
 
   // Hours are no longer collected for chamber events. The column is nullable and
   // is left out of the insert so it defaults to null; existing rows that already
   // have a value keep it and still render in the activity list.
   const supabase = await createClient()
-  const { error } = await supabase.from("chamber_events").insert({
-    user_id: me.id,
-    date,
-    event_name: eventName,
-    notes,
-  })
+  const row: Record<string, unknown> = { user_id: me.id, date, event_name: eventName, notes }
+  if (linkedEventId) row.pride_chamber_event_id = linkedEventId
+
+  let { error } = await supabase.from("chamber_events").insert(row)
+
+  // pride_chamber_event_id arrives in migration 013. If the code is deployed
+  // before that SQL is run, an insert carrying the column comes back as
+  // PGRST204 ("column not found in schema cache"). Retry without it so recording
+  // attendance keeps working — the free-text event_name is still saved.
+  if (error && linkedEventId && isUnknownColumnError(error, "pride_chamber_event_id")) {
+    console.log("[v0] chamber_events.pride_chamber_event_id missing, run migration 013. Saving without the link.")
+    delete row.pride_chamber_event_id
+    ;({ error } = await supabase.from("chamber_events").insert(row))
+  }
 
   if (error) {
     console.log("[v0] recordChamberEvent error:", error.message)

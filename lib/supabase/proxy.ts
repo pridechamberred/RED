@@ -6,7 +6,10 @@ import { RECOVERY_COOKIE } from "@/lib/auth-recovery"
 // whole point is that someone with no account can scan a member's QR code and
 // register. It exposes only the inviting member's name, company and photo, and
 // its single write goes through a server action that re-validates the token.
-const PUBLIC_PATHS = ["/auth", "/g/", "/_next", "/favicon.ico"]
+// "/api/cron" runs on a schedule with no user session; it authenticates itself
+// with CRON_SECRET, so the session funnel must let it through rather than
+// redirecting the (cookie-less) cron request to the login page.
+const PUBLIC_PATHS = ["/auth", "/g/", "/api/cron", "/_next", "/favicon.ico"]
 
 const RETIRED_AUTH_PATHS = ["/auth/sign-up", "/auth/sign-up-success"]
 

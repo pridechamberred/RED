@@ -4,6 +4,7 @@ import {
   type GuestInviteRow,
   type Member,
   type MemberOption,
+  type PrideChamberEventOption,
   type RecurringFrequency,
   type ReferralSource,
   type SubGroup,
@@ -11,6 +12,8 @@ import {
   referralSourceLabel,
   todayISO,
 } from "@/lib/types"
+import { easternTodayISO, formatLongDate, shiftISODate } from "@/lib/eastern-date"
+import { ELIGIBILITY_WINDOW_DAYS as PRIDE_CHAMBER_WINDOW_DAYS } from "@/lib/pride-chamber-calendar"
 import {
   computeDealTotal,
   isInYear,
@@ -518,6 +521,64 @@ export async function getGuestInvites(): Promise<GuestInviteRow[]> {
       memberSubGroup: (inviter?.subGroup ?? "RED Central") as SubGroup,
     }
   })
+}
+
+/**
+ * Eligible imported Pride Chamber events for the attendance dropdown: active,
+ * within the previous 31 calendar days (Eastern), newest first.
+ *
+ * Returns [] on any error — including before migration 013 is run, when the
+ * table does not exist yet. The form treats an empty list as "nothing to pick"
+ * and falls back to the manual entry field rather than breaking.
+ */
+export async function getEligiblePrideChamberEvents(): Promise<PrideChamberEventOption[]> {
+  const supabase = await createClient()
+  const today = easternTodayISO()
+  const from = shiftISODate(today, -PRIDE_CHAMBER_WINDOW_DAYS)
+
+  const { data, error } = await supabase
+    .from("pride_chamber_events")
+    .select("id, title, event_date")
+    .eq("is_active", true)
+    .gte("event_date", from)
+    .lte("event_date", today)
+    .order("event_date", { ascending: false })
+
+  if (error) {
+    console.log("[v0] getEligiblePrideChamberEvents error (falling back to manual entry):", error.message)
+    return []
+  }
+
+  return ((data as { id: string; title: string; event_date: string }[]) ?? []).map((e) => ({
+    id: e.id,
+    title: e.title,
+    eventDate: e.event_date,
+    label: `${e.title} — ${formatLongDate(e.event_date)}`,
+  }))
+}
+
+/**
+ * Looks up one active imported event by id.
+ *
+ * Used server-side when saving attendance so the stored event name and date are
+ * taken from the authoritative record, never from client-submitted text.
+ */
+export async function getPrideChamberEventById(
+  id: string,
+): Promise<{ id: string; title: string; event_date: string } | null> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("pride_chamber_events")
+    .select("id, title, event_date")
+    .eq("id", id)
+    .eq("is_active", true)
+    .maybeSingle()
+
+  if (error) {
+    console.log("[v0] getPrideChamberEventById error:", error.message)
+    return null
+  }
+  return (data as { id: string; title: string; event_date: string }) ?? null
 }
 
 /** Referrals RECEIVED by a member — needed for the admin member summary. */

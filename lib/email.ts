@@ -926,3 +926,66 @@ export async function sendReferralEmail(input: ReferralEmailInput): Promise<Deli
     },
   )
 }
+
+/** Where a failed Pride Chamber sync is reported, by request. */
+const SCRAPER_ALERT_EMAIL = "den@poolsyde.com"
+
+type ScraperFailureEmailInput = {
+  /** The underlying error message from the scrape attempt. */
+  error: string
+  /** The window that was being fetched, e.g. "2026-08-13 to 2026-09-13". */
+  window: string
+  /** Whether the failure came from the daily cron or an admin's manual run. */
+  trigger: "cron" | "manual"
+}
+
+/**
+ * Alerts the maintainer that a Pride Chamber calendar sync failed.
+ *
+ * The sync itself does not wipe anything on failure — members keep seeing the
+ * last successfully imported events — so this is a heads-up, not an outage
+ * notice: it says plainly that the existing list is still in use.
+ */
+export async function sendScraperFailureEmail(input: ScraperFailureEmailInput): Promise<DeliveryResult> {
+  const e = escapeHtml
+  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
+  const html = `<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
+      <tr>
+        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
+          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">incREDible — sync alert</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:28px;">
+          <p style="${p}">A Pride Chamber calendar sync did not complete.</p>
+          <p style="${p}"><strong>Trigger:</strong> ${e(input.trigger)}<br /><strong>Window:</strong> ${e(input.window)}</p>
+          <p style="margin:0 0 8px;font-size:13px;color:#6d6d68;">Error</p>
+          <pre style="margin:0 0 16px;padding:12px 14px;background:#f7f7f5;border-radius:10px;font-size:13px;line-height:1.5;color:#8a2020;white-space:pre-wrap;word-break:break-word;">${e(input.error)}</pre>
+          <p style="${p}">Members are unaffected: the reporting form is still showing the last successfully imported events. The next scheduled sync will retry automatically.</p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+  const text = [
+    `A Pride Chamber calendar sync did not complete.`,
+    ``,
+    `Trigger: ${input.trigger}`,
+    `Window:  ${input.window}`,
+    ``,
+    `Error:`,
+    input.error,
+    ``,
+    `Members are unaffected: the reporting form is still showing the last`,
+    `successfully imported events. The next scheduled sync will retry automatically.`,
+  ].join("\n")
+
+  return deliver(
+    "pride chamber sync failure",
+    { to: SCRAPER_ALERT_EMAIL, subject: "Pride Chamber event sync failed", html, text },
+    () => console.log(`[v0] Would alert ${SCRAPER_ALERT_EMAIL} of a Pride Chamber sync failure: ${input.error}`),
+  )
+}
