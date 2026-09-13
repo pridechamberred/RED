@@ -23,7 +23,7 @@ export default async function AttendanceRegisterPage({
   if (!meeting || !meeting.subGroup) notFound()
 
   // An admin may only register meetings of their own sub-group.
-  if (me.role === "admin" && meeting.subGroup !== me.sub_group) redirect("/admin/attendance")
+  if (me.role === "admin" && meeting.subGroup !== me.sub_group) redirect("/attendance/record")
 
   const { members, guests } = await getRegister(meeting)
 
@@ -36,7 +36,7 @@ export default async function AttendanceRegisterPage({
       <FormHeader
         title={meeting.title}
         subtitle={meetingDateFormat.format(new Date(meeting.startISO))}
-        backHref="/admin/attendance"
+        backHref="/attendance/record"
         backLabel="Attendance Record"
       />
 

@@ -71,8 +71,8 @@ export default async function AttendanceReportPage({
             ? "RED meeting attendance by member."
             : `${me.sub_group} meeting attendance by member.`
         }
-        backHref="/admin"
-        backLabel="Admin"
+        backHref="/attendance"
+        backLabel="Attendance"
       />
 
       <div className="mt-6 flex flex-col gap-6">

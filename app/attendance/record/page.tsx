@@ -82,8 +82,8 @@ export default async function AttendanceIndexPage() {
             ? `Meetings from the last ${REGISTER_WINDOW_DAYS} days, across all sub-groups.`
             : `${me.sub_group} meetings from the last ${REGISTER_WINDOW_DAYS} days.`
         }
-        backHref="/admin"
-        backLabel="Admin"
+        backHref="/attendance"
+        backLabel="Attendance"
       />
 
       {meetings.length === 0 ? (
@@ -106,7 +106,7 @@ export default async function AttendanceIndexPage() {
             return (
               <li key={meeting.id}>
                 <Link
-                  href={`/admin/attendance/${encodeURIComponent(meeting.id)}`}
+                  href={`/attendance/record/${encodeURIComponent(meeting.id)}`}
                   className="flex items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-3.5 transition-colors hover:border-primary/40 hover:bg-accent/60"
                 >
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
