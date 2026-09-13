@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { PaginatedActivityList } from "@/components/paginated-activity-list"
 import { Button } from "@/components/ui/button"
@@ -17,7 +17,15 @@ import {
   formatMoney,
   memberName,
 } from "@/lib/types"
-import { ChevronRight, SlidersHorizontal, UserPlus } from "lucide-react"
+import { filterActivityRows } from "@/lib/report-filters"
+import { ChevronRight, Download, SlidersHorizontal, UserPlus } from "lucide-react"
+
+/** Reads the download filename the export route sets in Content-Disposition. */
+function filenameFromDisposition(disposition: string | null): string | null {
+  if (!disposition) return null
+  const match = /filename="?([^";]+)"?/.exec(disposition)
+  return match ? match[1] : null
+}
 
 // Attendance never reaches this feed (it is per-member, not per-activity), so
 // offering it as a filter would be a permanently empty result.
@@ -45,17 +53,15 @@ export function AdminDashboard({
   const [from, setFrom] = useState("")
   const [to, setTo] = useState("")
   const [showFilters, setShowFilters] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportMsg, setExportMsg] = useState<{ tone: "success" | "error" | "info"; text: string } | null>(null)
 
-  const filtered = useMemo(() => {
-    return rows.filter((row) => {
-      if (subGroup !== "all" && row.memberSubGroup !== subGroup) return false
-      if (member !== "all" && row.memberId !== member) return false
-      if (type !== "all" && row.type !== type) return false
-      if (from && row.date < from) return false
-      if (to && row.date > to) return false
-      return true
-    })
-  }, [rows, subGroup, member, type, from, to])
+  // The feed and the XLSX export share one filter function so the spreadsheet
+  // always contains exactly what the report on screen shows.
+  const filtered = useMemo(
+    () => filterActivityRows(rows, { member, type, subGroup, from, to }),
+    [rows, subGroup, member, type, from, to],
+  )
 
   /**
    * Guests are not activity rows, so they are filtered separately — by the same
@@ -130,6 +136,52 @@ export function AdminDashboard({
         ? "h2"
         : null
 
+  // Let a success/empty note fade on its own; keep errors up until the next try.
+  useEffect(() => {
+    if (!exportMsg || exportMsg.tone === "error") return
+    const timer = setTimeout(() => setExportMsg(null), 4000)
+    return () => clearTimeout(timer)
+  }, [exportMsg])
+
+  async function handleExport() {
+    // The report is already empty on screen, so short-circuit before any request.
+    if (filtered.length === 0) {
+      setExportMsg({ tone: "info", text: "There are no records matching the current filters." })
+      return
+    }
+    setExporting(true)
+    setExportMsg(null)
+    try {
+      const res = await fetch("/api/admin/export", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ member, type, subGroup, from, to }),
+      })
+      if (res.status === 422) {
+        setExportMsg({ tone: "info", text: "There are no records matching the current filters." })
+        return
+      }
+      if (!res.ok) throw new Error(`Export request failed with status ${res.status}`)
+
+      const blob = await res.blob()
+      const filename = filenameFromDisposition(res.headers.get("content-disposition")) ?? "RED_Report.xlsx"
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setExportMsg({ tone: "success", text: "Report exported successfully." })
+    } catch (err) {
+      console.error("[v0] XLSX export failed:", err)
+      setExportMsg({ tone: "error", text: "We couldn't export this report. Please try again." })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1.5">
@@ -138,23 +190,52 @@ export function AdminDashboard({
       </header>
 
       <div className="flex flex-col gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setShowFilters((v) => !v)}
-          aria-expanded={showFilters}
-          className="h-11 justify-between"
-        >
-          <span className="flex items-center gap-2">
-            <SlidersHorizontal className="size-4" aria-hidden />
-            Filters
-          </span>
-          {activeFilters > 0 ? (
-            <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">
-              {activeFilters}
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setShowFilters((v) => !v)}
+            aria-expanded={showFilters}
+            className="h-11 flex-1 justify-between"
+          >
+            <span className="flex items-center gap-2">
+              <SlidersHorizontal className="size-4" aria-hidden />
+              Filters
             </span>
-          ) : null}
-        </Button>
+            {activeFilters > 0 ? (
+              <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">
+                {activeFilters}
+              </span>
+            ) : null}
+          </Button>
+
+          <Button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            aria-label="Export the filtered report to an Excel (.xlsx) spreadsheet"
+            className="h-11 gap-2"
+          >
+            <Download className="size-4" aria-hidden />
+            {exporting ? "Generating XLSX..." : "Export XLSX"}
+          </Button>
+        </div>
+
+        {exportMsg ? (
+          <p
+            role={exportMsg.tone === "error" ? "alert" : "status"}
+            aria-live={exportMsg.tone === "error" ? "assertive" : "polite"}
+            className={`rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed ${
+              exportMsg.tone === "error"
+                ? "border-destructive/40 bg-destructive/10 text-destructive"
+                : exportMsg.tone === "success"
+                  ? "border-primary/30 bg-primary/5 text-foreground"
+                  : "border-border bg-muted text-muted-foreground"
+            }`}
+          >
+            {exportMsg.text}
+          </p>
+        ) : null}
 
         {showFilters ? (
           <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4">
