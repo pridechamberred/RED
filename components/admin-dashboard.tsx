@@ -17,7 +17,7 @@ import {
   formatMoney,
   memberName,
 } from "@/lib/types"
-import { BarChart3, ChevronRight, ClipboardCheck, SlidersHorizontal, UserPlus } from "lucide-react"
+import { ChevronRight, SlidersHorizontal, UserPlus } from "lucide-react"
 
 // Attendance never reaches this feed (it is per-member, not per-activity), so
 // offering it as a filter would be a permanently empty result.
@@ -79,6 +79,7 @@ export function AdminDashboard({
     let hours = 0
     let vous = 0
     let eventAttendees = 0
+    let referrals = 0
     for (const row of filtered) {
       if (row.type === "done_deal" && row.value !== null) dealValue += row.value
       // Scoped to volunteering on purpose: chamber_events still has an unused
@@ -88,8 +89,11 @@ export function AdminDashboard({
       if (row.type === "vous") vous += 1
       // One chamber_event row = one member attending one event.
       if (row.type === "chamber_event") eventAttendees += 1
+      // Passed referrals logged in the app. The type filter can narrow to just
+      // these; the sub-group / member / date bounds still apply either way.
+      if (row.type === "referral") referrals += 1
     }
-    return { dealValue, hours, vous, eventAttendees }
+    return { dealValue, hours, vous, eventAttendees, referrals }
   }, [filtered])
 
   const activeFilters = [
@@ -110,68 +114,28 @@ export function AdminDashboard({
     )
   }, [rows, members, subGroup])
 
+  // Our group measures against two halves each year. "January – June" is always
+  // the current year. "July – December" is the current year once we have
+  // reached H2, but the previous year while we are still in H1 — that half has
+  // not begun yet, so the most recent completed one is last year's.
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const h2Year = now.getMonth() < 6 ? currentYear - 1 : currentYear
+  const firstHalf = { from: `${currentYear}-01-01`, to: `${currentYear}-06-30` }
+  const secondHalf = { from: `${h2Year}-07-01`, to: `${h2Year}-12-31` }
+  const activeHalf =
+    from === firstHalf.from && to === firstHalf.to
+      ? "h1"
+      : from === secondHalf.from && to === secondHalf.to
+        ? "h2"
+        : null
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight">Admin</h1>
         <p className="text-sm leading-relaxed text-muted-foreground">{scopeLabel}</p>
       </header>
-
-      <div className="flex flex-col gap-2.5">
-        <Link
-          href="/admin/attendance"
-          className="flex items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-4 transition-colors hover:border-primary/40 hover:bg-accent/60"
-        >
-          <span
-            aria-hidden
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground"
-          >
-            <ClipboardCheck className="size-5" />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="font-semibold leading-tight">Attendance Record</span>
-            <span className="text-sm leading-relaxed text-muted-foreground">
-              Mark who came to each RED meeting
-            </span>
-          </span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        </Link>
-
-        <Link
-          href="/admin/attendance/report"
-          className="flex items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-4 transition-colors hover:border-primary/40 hover:bg-accent/60"
-        >
-          <span
-            aria-hidden
-            className="flex size-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground"
-          >
-            <BarChart3 className="size-5" />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="font-semibold leading-tight">Attendance Report</span>
-            <span className="text-sm leading-relaxed text-muted-foreground">
-              Meeting attendance by member, over any date range
-            </span>
-          </span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        </Link>
-      </div>
-
-      <dl className="grid grid-cols-3 gap-2.5">
-        {[
-          { label: "Activities", value: String(filtered.length) },
-          { label: "Done Deals", value: formatMoney(totals.dealValue) },
-          { label: "Volunteer Hours", value: String(Math.round(totals.hours * 100) / 100) },
-          { label: "Vous completed", value: String(totals.vous) },
-          { label: "Guests invited", value: String(guestCount) },
-          { label: "Event attendees", value: String(totals.eventAttendees) },
-        ].map((stat) => (
-          <div key={stat.label} className="flex flex-col gap-1 rounded-2xl border border-border bg-card px-3.5 py-3">
-            <dt className="text-xs font-medium text-muted-foreground">{stat.label}</dt>
-            <dd className="truncate text-lg font-bold tabular-nums">{stat.value}</dd>
-          </div>
-        ))}
-      </dl>
 
       <div className="flex flex-col gap-3">
         <Button
@@ -266,6 +230,36 @@ export function AdminDashboard({
               </Select>
             </div>
 
+            <div className="flex flex-col gap-2">
+              <Label>Half-year</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={activeHalf === "h1" ? "default" : "outline"}
+                  onClick={() => {
+                    setFrom(firstHalf.from)
+                    setTo(firstHalf.to)
+                  }}
+                  className="h-auto flex-1 flex-col gap-0.5 py-2"
+                >
+                  <span>January – June</span>
+                  <span className="text-xs font-normal opacity-80">{currentYear}</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={activeHalf === "h2" ? "default" : "outline"}
+                  onClick={() => {
+                    setFrom(secondHalf.from)
+                    setTo(secondHalf.to)
+                  }}
+                  className="h-auto flex-1 flex-col gap-0.5 py-2"
+                >
+                  <span>July – December</span>
+                  <span className="text-xs font-normal opacity-80">{h2Year}</span>
+                </Button>
+              </div>
+            </div>
+
             <div className="flex gap-3">
               <div className="flex flex-1 flex-col gap-2">
                 <Label htmlFor="filter-from">From</Label>
@@ -310,6 +304,22 @@ export function AdminDashboard({
           </div>
         ) : null}
       </div>
+
+      <dl className="grid grid-cols-3 gap-2.5">
+        {[
+          { label: "Referrals", value: String(totals.referrals) },
+          { label: "Done Deals", value: formatMoney(totals.dealValue) },
+          { label: "Volunteer Hours", value: String(Math.round(totals.hours * 100) / 100) },
+          { label: "Vous completed", value: String(totals.vous) },
+          { label: "Guests invited", value: String(guestCount) },
+          { label: "Event attendees", value: String(totals.eventAttendees) },
+        ].map((stat) => (
+          <div key={stat.label} className="flex flex-col gap-1 rounded-2xl border border-border bg-card px-3.5 py-3">
+            <dt className="text-xs font-medium text-muted-foreground">{stat.label}</dt>
+            <dd className="truncate text-lg font-bold tabular-nums">{stat.value}</dd>
+          </div>
+        ))}
+      </dl>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Activity feed</h2>

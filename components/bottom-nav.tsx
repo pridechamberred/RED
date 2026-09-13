@@ -2,10 +2,16 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { House, ListChecks, ShieldCheck, UserRound } from "lucide-react"
+import { CalendarCheck, House, ListChecks, ShieldCheck, UserRound } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const ICONS = { home: House, activity: ListChecks, admin: ShieldCheck, profile: UserRound } as const
+const ICONS = {
+  home: House,
+  activity: ListChecks,
+  admin: ShieldCheck,
+  attendance: CalendarCheck,
+  profile: UserRound,
+} as const
 
 type Item = { href: string; label: string; icon: keyof typeof ICONS }
 
@@ -16,6 +22,7 @@ export function BottomNav({ showAdmin }: { showAdmin: boolean }) {
     { href: "/", label: "Home", icon: "home" },
     { href: "/my-activity", label: "My Activity", icon: "activity" },
     ...(showAdmin ? [{ href: "/admin", label: "Admin", icon: "admin" as const }] : []),
+    ...(showAdmin ? [{ href: "/attendance", label: "Attendance", icon: "attendance" as const }] : []),
     { href: "/profile", label: "Profile", icon: "profile" },
   ]
 
