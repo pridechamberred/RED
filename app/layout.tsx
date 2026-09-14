@@ -40,10 +40,11 @@ export const viewport: Viewport = {
   colorScheme: 'light dark',
   width: 'device-width',
   initialScale: 1,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#fbfbfa' },
-    { media: '(prefers-color-scheme: dark)', color: '#1c1c1e' },
-  ],
+  // Brand red for the status bar / browser chrome in both schemes so the
+  // system's white clock, signal and battery icons stay legible (they vanished
+  // against the near-white default). White text is the brand's own
+  // --primary-foreground, so contrast is guaranteed.
+  themeColor: '#c1362d',
 }
 
 export default function RootLayout({
