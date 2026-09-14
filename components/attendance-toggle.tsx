@@ -10,6 +10,9 @@ import {
   GUEST_STATUSES,
   MEMBER_STATUSES,
   STATUS_LABEL,
+  SUBSTITUTE_NAME_MAX,
+  isCompleteSubstituteName,
+  normalizeSubstituteName,
   type AttendanceMark,
   type AttendanceStatus,
 } from "@/lib/attendance-status"
@@ -33,8 +36,6 @@ const STATUS_ACTIVE: Record<AttendanceStatus, string> = {
   substitute: "bg-muted-foreground text-background",
 }
 
-const SUBSTITUTE_NAME_MAX = 120
-
 /**
  * Attendance control: Attended, Absent, Substitute (members only), or neither.
  *
@@ -43,9 +44,12 @@ const SUBSTITUTE_NAME_MAX = 120
  * absence. Clearing is therefore offered explicitly rather than by toggling the
  * active option off, which would be ambiguous.
  *
- * When Substitute is active an optional free-text box appears for the stand-in's
- * name. It saves on blur / Enter rather than per keystroke — the register is a
- * long column of controls and one write per keypress would be needless churn.
+ * When Substitute is active a required free-text box appears for the stand-in's
+ * first and last name. Unlike Attended/Absent, choosing Substitute does NOT save
+ * on its own — a substitute record is meaningless without a name — so the write
+ * happens only once a valid two-word name is committed on blur / Enter, not per
+ * keystroke (the register is a long column of controls and one write per keypress
+ * would be needless churn).
  */
 export function AttendanceToggle({
   meetingId,
@@ -114,14 +118,24 @@ export function AttendanceToggle({
     const next = value === "clear" ? null : value
     if (next === mark) return
 
+    setError(null)
+
+    // Substitute is different from the other options: it needs a first and last
+    // name before it can be saved. So selecting it only reveals the (focused)
+    // name box optimistically — the actual write waits for commitName() once a
+    // valid two-word name is entered. Nothing is persisted here, so navigating
+    // away without a name simply leaves the previous state untouched.
+    if (value === "substitute") {
+      setMark("substitute")
+      return
+    }
+
     const previous = mark
     setMark(next) // optimistic — a register is a lot of taps in a row
-    setError(null)
 
     // Leaving Substitute discards any typed name, matching the server, which
     // forces the column to null for every non-substitute status.
-    const nameForWrite = value === "substitute" ? subName.trim() : ""
-    if (value !== "substitute") setSubName("")
+    setSubName("")
 
     // Roll the optimistic status back if the write fails.
     const form = new FormData()
@@ -129,7 +143,7 @@ export function AttendanceToggle({
     form.set("subjectKind", subjectKind)
     form.set("subjectId", subjectId)
     form.set("value", value)
-    form.set("substituteName", nameForWrite)
+    form.set("substituteName", "")
 
     startTransition(async () => {
       const result = await setAttendance(form)
@@ -138,15 +152,19 @@ export function AttendanceToggle({
         setError(result.error)
         return
       }
-      savedSubName.current = value === "substitute" ? nameForWrite : ""
+      savedSubName.current = ""
       router.refresh()
     })
   }
 
   function commitName() {
     if (mark !== "substitute") return
-    const trimmed = subName.trim()
+    const trimmed = normalizeSubstituteName(subName)
     if (trimmed === savedSubName.current) return // nothing actually changed
+    if (!isCompleteSubstituteName(trimmed)) {
+      setError("Please enter the substitute's first and last name.")
+      return
+    }
     if (trimmed.length > SUBSTITUTE_NAME_MAX) {
       setError(`That substitute name is too long (${SUBSTITUTE_NAME_MAX} characters max).`)
       return
@@ -186,7 +204,7 @@ export function AttendanceToggle({
         })}
       </div>
 
-      {/* Optional stand-in name, shown only while Substitute is the active mark. */}
+      {/* Required stand-in name, shown only while Substitute is the active mark. */}
       {mark === "substitute" ? (
         <input
           ref={subInputRef}
@@ -202,8 +220,8 @@ export function AttendanceToggle({
           }}
           maxLength={SUBSTITUTE_NAME_MAX}
           disabled={pending}
-          placeholder="Substitute's name (optional)"
-          aria-label={`Substitute's name for ${name}`}
+          placeholder="First and last name (required)"
+          aria-label={`Substitute's first and last name for ${name}`}
           className="w-56 max-w-[70vw] rounded-lg border border-border bg-background px-3 py-1.5 text-right text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
         />
       ) : null}
@@ -225,6 +243,13 @@ export function AttendanceToggle({
       {error ? (
         <span role="alert" className="max-w-[14rem] text-right text-[0.6875rem] leading-snug text-destructive">
           {error}
+        </span>
+      ) : mark === "substitute" && !isCompleteSubstituteName(subName) ? (
+        // Nudge, not an error: the name has not been rejected, it just isn't
+        // complete enough to save yet. Making it visible stops an admin leaving
+        // Substitute selected but unsaved without realising a name is needed.
+        <span className="max-w-[14rem] text-right text-[0.6875rem] leading-snug text-muted-foreground">
+          Enter a first and last name to save this substitute.
         </span>
       ) : null}
     </div>

@@ -8,7 +8,7 @@ import {
   subGroupFromTitle,
   REGISTER_WINDOW_DAYS,
 } from "@/lib/calendar"
-import { memberName, type SubGroup } from "@/lib/types"
+import { memberName, SUB_GROUPS, type SubGroup } from "@/lib/types"
 import type { AttendanceMark, AttendanceStatus } from "@/lib/attendance-status"
 
 export { REGISTER_WINDOW_DAYS }
@@ -390,4 +390,82 @@ export async function getAttendanceReport(opts: {
 
     return { subGroup: group, meetingsHeld: meetingIds.length, members: rows }
   })
+}
+
+/** One substitute's tally of appearances across every sub-group, in range. */
+export type SubstituteReportRow = {
+  /** The stand-in's name, whitespace-normalised, as first recorded. */
+  name: string
+  /** Occasions this name was recorded as a substitute, per sub-group. */
+  counts: Record<SubGroup, number>
+  /** Sum across all sub-groups — used only for ordering. */
+  total: number
+}
+
+function zeroSubGroupCounts(): Record<SubGroup, number> {
+  return Object.fromEntries(SUB_GROUPS.map((g) => [g, 0])) as Record<SubGroup, number>
+}
+
+/**
+ * Cross-group tally of every named substitute over a date range.
+ *
+ * Deliberately NOT scoped to a sub-group: the point of the Substitute Record is
+ * to show every stand-in across all of RED, so every admin sees the same figures
+ * regardless of their own group. Only the date range narrows it, matching the
+ * report's date filter. Role-based access to the page itself is enforced by the
+ * caller.
+ *
+ * Names are free text, so identical people typed with different casing or
+ * spacing ("Frank Smith" / "frank  smith") are folded together case-insensitively
+ * and the first-seen spelling is shown. Degrades to an empty list (rather than
+ * failing the whole report) if migration 012's `substitute_name` column is not
+ * present yet.
+ */
+export async function getSubstituteReport(opts: {
+  fromDate: string
+  toDate: string
+}): Promise<SubstituteReportRow[]> {
+  const meetings = await getReportMeetings(opts.fromDate, opts.toDate)
+  const meetingIds = meetings.filter((m) => m.subGroup).map((m) => m.id)
+  if (meetingIds.length === 0) return []
+
+  const supabase = await createClient()
+
+  // key: lowercased normalised name -> tally row (case-insensitive grouping).
+  const byName = new Map<string, SubstituteReportRow>()
+
+  const CHUNK = 150
+  for (let i = 0; i < meetingIds.length; i += CHUNK) {
+    const slice = meetingIds.slice(i, i + CHUNK)
+    const { data, error } = await supabase
+      .from("meeting_attendance")
+      .select("sub_group, substitute_name")
+      .in("meeting_uid", slice)
+      .eq("status", "substitute")
+
+    if (error) {
+      // Pre-012 the column does not exist and this select errors; degrade to an
+      // empty section rather than breaking the member report alongside it.
+      console.error("getSubstituteReport error:", error.message)
+      return []
+    }
+
+    for (const row of (data ?? []) as { sub_group: SubGroup; substitute_name: string | null }[]) {
+      const name = (row.substitute_name ?? "").trim().replace(/\s+/g, " ")
+      if (!name) continue
+      if (!SUB_GROUPS.includes(row.sub_group)) continue
+
+      const key = name.toLowerCase()
+      let entry = byName.get(key)
+      if (!entry) {
+        entry = { name, counts: zeroSubGroupCounts(), total: 0 }
+        byName.set(key, entry)
+      }
+      entry.counts[row.sub_group] += 1
+      entry.total += 1
+    }
+  }
+
+  // Busiest substitutes first; ties broken alphabetically for a stable order.
+  return [...byName.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
 }
