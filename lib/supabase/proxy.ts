@@ -9,7 +9,18 @@ import { RECOVERY_COOKIE } from "@/lib/auth-recovery"
 // "/api/cron" runs on a schedule with no user session; it authenticates itself
 // with CRON_SECRET, so the session funnel must let it through rather than
 // redirecting the (cookie-less) cron request to the login page.
-const PUBLIC_PATHS = ["/auth", "/g/", "/api/cron", "/_next", "/favicon.ico"]
+// "/manifest.webmanifest" and "/sw.js" back the installable PWA: the browser
+// fetches them with no session (and the service worker must never be bounced to
+// a login page), so they have to resolve publicly like any other static asset.
+const PUBLIC_PATHS = [
+  "/auth",
+  "/g/",
+  "/api/cron",
+  "/_next",
+  "/favicon.ico",
+  "/manifest.webmanifest",
+  "/sw.js",
+]
 
 const RETIRED_AUTH_PATHS = ["/auth/sign-up", "/auth/sign-up-success"]
 
