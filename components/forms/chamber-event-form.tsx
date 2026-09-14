@@ -66,7 +66,11 @@ export function ChamberEventForm({ events }: { events: PrideChamberEventOption[]
           <Label htmlFor="prideChamberEvent">Which Pride Chamber event did you attend?</Label>
           <Select value={selectedId} onValueChange={(value) => setSelectedId(value as string | null)}>
             <SelectTrigger id="prideChamberEvent" className="h-12 w-full">
-              <SelectValue placeholder="Select an event" />
+              {/* Base UI renders the raw value (the event id) unless given a
+                  function child, so map the selected id back to its label. */}
+              <SelectValue placeholder="Select an event">
+                {(value) => events.find((event) => event.id === value)?.label ?? "Select an event"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {events.map((event) => (
