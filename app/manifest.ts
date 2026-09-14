@@ -2,8 +2,11 @@ import type { MetadataRoute } from "next"
 
 /**
  * Web app manifest for the incREDible PWA, served by Next at
- * /manifest.webmanifest. Colors mirror the light theme in globals.css so the
- * standalone splash and status bar match the app chrome.
+ * /manifest.webmanifest. background_color mirrors the light theme so the
+ * splash matches the app chrome, while theme_color is the brand red
+ * (--primary in globals.css) so Android paints the standalone status bar red —
+ * its white system text/icons are legible on red but disappear on the near-
+ * white app background.
  *
  * Each icon entry lists several sizes for one 1024px master so the browser has
  * a valid 192 and 512 candidate (Chrome's installability requirement) without
@@ -20,7 +23,7 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     orientation: "portrait",
     background_color: "#fbfbfa",
-    theme_color: "#fbfbfa",
+    theme_color: "#c1362d",
     icons: [
       {
         src: "/icons/icon-app.png",
