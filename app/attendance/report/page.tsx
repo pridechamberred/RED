@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell"
 import { FormHeader } from "@/components/form-header"
 import { AttendanceReportFilters } from "@/components/attendance-report-filters"
 import { getCurrentMember } from "@/lib/data"
-import { getAttendanceReport, type MemberAttendanceReportRow } from "@/lib/attendance"
+import { getAttendanceReport, getSubstituteReport, type MemberAttendanceReportRow } from "@/lib/attendance"
 import { SUB_GROUPS, type SubGroup, formatDate, isAdmin, todayISO } from "@/lib/types"
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -55,7 +55,20 @@ export default async function AttendanceReportPage({
   const activeGroup = requestedGroup && allowedForRole.includes(requestedGroup) ? requestedGroup : null
   const subGroups = activeGroup ? [activeGroup] : allowedForRole
 
-  const report = await getAttendanceReport({ fromDate: from, toDate: to, subGroups })
+  // The member report is role-scoped (subGroups), but the Substitute Record is
+  // shown in full to every admin — it is only ever narrowed by the date range.
+  const [report, substitutes] = await Promise.all([
+    getAttendanceReport({ fromDate: from, toDate: to, subGroups }),
+    getSubstituteReport({ fromDate: from, toDate: to }),
+  ])
+
+  const substituteTotals = SUB_GROUPS.reduce(
+    (acc, g) => {
+      acc[g] = substitutes.reduce((sum, s) => sum + s.counts[g], 0)
+      return acc
+    },
+    {} as Record<SubGroup, number>,
+  )
 
   // When a specific group is chosen, always show it (with a note if empty) so
   // the page never looks broken. Across all groups, hide the ones with no
@@ -190,6 +203,76 @@ export default async function AttendanceReportPage({
             )
           })
         )}
+
+        <section className="flex flex-col gap-3">
+          <div className="flex flex-col gap-0.5">
+            <h2 className="text-sm font-bold uppercase tracking-[0.06em]">Substitute Record</h2>
+            <p className="text-xs text-muted-foreground">
+              Substitutes recorded across all RED sub-groups in the selected range.
+            </p>
+          </div>
+
+          {substitutes.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+              No substitutes recorded in this range.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+              <table className="w-full border-collapse text-sm">
+                <caption className="sr-only">
+                  {`Substitute appearances by name and sub-group from ${formatDate(from)} to ${formatDate(to)}`}
+                </caption>
+                <thead>
+                  <tr className="border-b border-border">
+                    <th scope="col" className="px-3 py-2.5 text-left font-semibold">
+                      Name
+                    </th>
+                    {SUB_GROUPS.map((group) => (
+                      <th
+                        key={group}
+                        scope="col"
+                        title={group}
+                        className="px-2 py-2.5 text-right font-semibold last:pr-3"
+                      >
+                        <span aria-hidden>{group.replace("RED ", "")}</span>
+                        <span className="sr-only">{group}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {substitutes.map((sub) => (
+                    <tr key={sub.name} className="border-b border-border/60 last:border-0">
+                      <th scope="row" className="max-w-[10rem] truncate px-3 py-2.5 text-left font-medium">
+                        {sub.name}
+                      </th>
+                      {SUB_GROUPS.map((group) => (
+                        <td key={group} className="px-2 py-2.5 text-right tabular-nums last:pr-3">
+                          {num(sub.counts[group])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border bg-secondary/40">
+                    <th scope="row" className="px-3 py-2.5 text-left font-semibold">
+                      All substitutes
+                    </th>
+                    {SUB_GROUPS.map((group) => (
+                      <td
+                        key={group}
+                        className="px-2 py-2.5 text-right font-semibold tabular-nums last:pr-3"
+                      >
+                        {substituteTotals[group]}
+                      </td>
+                    ))}
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
     </AppShell>
   )

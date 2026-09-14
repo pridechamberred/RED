@@ -25,6 +25,11 @@ import {
 } from "@/lib/types"
 import { getMeetingOptions, type MeetingOption } from "@/lib/meeting-options"
 import { findRegisterMeeting } from "@/lib/attendance"
+import {
+  SUBSTITUTE_NAME_MAX,
+  isCompleteSubstituteName,
+  normalizeSubstituteName,
+} from "@/lib/attendance-status"
 import { NO_MEETING } from "@/lib/meeting-constants"
 
 export type ActionResult = { ok: true; note?: string } | { ok: false; error: string }
@@ -722,16 +727,22 @@ export async function setAttendance(form: FormData): Promise<ActionResult> {
   return { ok: false, error: GENERIC_ERROR }
   }
 
-  // Optional free-text stand-in name. Only meaningful for a substitute; for any
-  // other status it is forced to null so a stale name cannot survive a status
-  // change (the DB check constraint enforces the same invariant). Trimmed and
-  // capped to match the column constraint, so an over-long value is rejected
-  // here with a friendly message rather than as a raw DB error.
-  const rawSubName = str(form, "substituteName").trim()
-  if (value === "substitute" && rawSubName.length > 120) {
-  return { ok: false, error: "That substitute name is too long (120 characters max)." }
+  // Free-text stand-in name. Mandatory for a substitute — a substitute record
+  // is meaningless without knowing who stood in — and it must carry a surname,
+  // so at least two words are required ("Frank" is rejected, "Frank Smith" is
+  // accepted). For any other status it is forced to null so a stale name cannot
+  // survive a status change (the DB check constraint enforces that invariant).
+  // Validated here as well as in the UI, since a client can post anything.
+  const rawSubName = normalizeSubstituteName(str(form, "substituteName"))
+  if (value === "substitute") {
+    if (!isCompleteSubstituteName(rawSubName)) {
+      return { ok: false, error: "Please enter the substitute's first and last name." }
+    }
+    if (rawSubName.length > SUBSTITUTE_NAME_MAX) {
+      return { ok: false, error: `That substitute name is too long (${SUBSTITUTE_NAME_MAX} characters max).` }
+    }
   }
-  const substituteName = value === "substitute" && rawSubName.length > 0 ? rawSubName : null
+  const substituteName = value === "substitute" ? rawSubName : null
 
   // Validates the id is a real meeting still inside the register window, and
   // recovers its group/title/start from the calendar rather than the form.

@@ -40,3 +40,22 @@ export const STATUS_LABEL: Record<AttendanceStatus, string> = {
   absent: "Absent",
   substitute: "Substitute",
 }
+
+/** Matches the length ceiling on public.meeting_attendance.substitute_name. */
+export const SUBSTITUTE_NAME_MAX = 120
+
+/** Trim and collapse internal whitespace, so "Frank   Smith" reads as two words. */
+export function normalizeSubstituteName(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ")
+}
+
+/**
+ * A recordable substitute needs a first AND last name, so at least two
+ * whitespace-separated words are required — "Frank" alone is rejected, "Frank
+ * Smith" is accepted. We can't validate that a name is real, only that a
+ * surname was supplied, which is the product rule. Shared by the register UI
+ * and `setAttendance()` so both enforce exactly the same thing.
+ */
+export function isCompleteSubstituteName(raw: string): boolean {
+  return normalizeSubstituteName(raw).split(" ").filter(Boolean).length >= 2
+}
