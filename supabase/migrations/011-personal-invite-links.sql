@@ -18,13 +18,20 @@
 --
 -- Hex rather than base64 on purpose: no +/= characters to url-encode, and no
 -- case sensitivity to lose if a token is ever read aloud or typed by hand.
-
+--
+-- Built from gen_random_uuid() (a pg_catalog builtin) and pinned to an empty
+-- search_path so it resolves from ANY caller — notably public.handle_new_user(),
+-- which runs with `set search_path = ''`. An earlier version used pgcrypto's
+-- gen_random_bytes(), which lives in the `extensions` schema and is invisible
+-- under an empty search_path, breaking every trigger-driven member insert. See
+-- migration 014 for the full write-up.
 create or replace function public.generate_invite_token()
 returns text
 language sql
 volatile
+set search_path = ''
 as $$
-  select encode(gen_random_bytes(8), 'hex');
+  select substr(replace(gen_random_uuid()::text, '-', ''), 1, 16);
 $$;
 
 alter table public.members
