@@ -1,4 +1,4 @@
--- ===========================================================================
+se -- ===========================================================================
 -- 014 · Fix "Database error creating new user" when adding members / signing up
 --
 -- Run this whole file in the Supabase SQL editor (Dashboard > SQL Editor >

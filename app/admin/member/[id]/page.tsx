@@ -3,7 +3,8 @@ import { AppShell } from "@/components/app-shell"
 import { ActivityList } from "@/components/activity-list"
 import { FormHeader } from "@/components/form-header"
 import { getActivityFeed, getCurrentMember, getMemberById, getReferralsReceivedCount } from "@/lib/data"
-import { formatMoney, isAdmin, memberName } from "@/lib/types"
+import { formatMoney, formatSubGroups, isAdmin, memberName, resolveSubGroups, subGroupsOverlap } from "@/lib/types"
+import { MemberSubGroupsEditor } from "@/components/member-sub-groups-editor"
 
 export default async function AdminMemberPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -15,8 +16,10 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
   const member = await getMemberById(id)
   if (!member) notFound()
 
-  // An admin may only inspect members inside their own sub-group.
-  if (me.role === "admin" && member.sub_group !== me.sub_group) redirect("/admin")
+  // An admin may only inspect members who share one of their sub-groups.
+  if (me.role === "admin" && !subGroupsOverlap(resolveSubGroups(member), resolveSubGroups(me))) {
+    redirect("/admin")
+  }
 
   const [rows, referralsReceived] = await Promise.all([
     getActivityFeed(member.id),
@@ -57,10 +60,18 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
     <AppShell showAdmin>
       <FormHeader
         title={memberName(member)}
-        subtitle={member.company ? `${member.company} · ${member.sub_group}` : member.sub_group}
+        subtitle={member.company ? `${member.company} · ${formatSubGroups(member)}` : formatSubGroups(member)}
         backHref="/admin"
         backLabel="Admin"
       />
+
+      {me.role === "super-admin" ? (
+        <MemberSubGroupsEditor
+          memberId={member.id}
+          memberName={memberName(member)}
+          subGroups={resolveSubGroups(member)}
+        />
+      ) : null}
 
       <dl className="mt-6 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {stats.map((stat) => (

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { MemberAvatar } from "@/components/member-avatar"
-import { type MemberOption, memberName } from "@/lib/types"
+import { type MemberOption, formatSubGroups, memberName } from "@/lib/types"
 import { Search, X } from "lucide-react"
 
 /**
@@ -101,7 +101,7 @@ export function MemberSearch({ members }: { members: MemberOption[] }) {
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-semibold leading-tight">{memberName(m)}</span>
                   <span className="truncate text-sm leading-relaxed text-muted-foreground">
-                    {m.company || m.sub_group}
+                    {m.company || formatSubGroups(m)}
                   </span>
                 </span>
               </button>

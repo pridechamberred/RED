@@ -15,6 +15,11 @@
 -- Supabase auth account. When someone signs up with an email that already
 -- exists as a member, the trigger below claims that member record for them.
 
+-- sub_group is the member's PRIMARY group (single value, drives display and
+-- every single-group path). sub_groups (migration 015) is the FULL set they
+-- belong to and always contains the primary — membership scoping keys on it, so
+-- a member can be a full member of more than one group. A trigger below keeps
+-- the two in agreement from either side.
 create table if not exists public.members (
   id           uuid primary key default gen_random_uuid(),
   auth_user_id uuid unique references auth.users(id) on delete set null,
@@ -24,11 +29,53 @@ create table if not exists public.members (
   company      text,
   role         text not null default 'user' check (role in ('user', 'admin', 'super-admin')),
   sub_group    text not null check (sub_group in ('RED Central', 'RED Uptown', 'RED Downtown', 'RED West', 'RED Connect')),
-  created_at   timestamptz not null default now()
+  sub_groups   text[] not null default '{}',
+  created_at   timestamptz not null default now(),
+  constraint members_sub_groups_valid check (
+    cardinality(sub_groups) >= 1
+    and sub_groups <@ array['RED Central','RED Uptown','RED Downtown','RED West','RED Connect']::text[]
+    and sub_group = any(sub_groups)
+  )
 );
 
 create index if not exists members_sub_group_idx on public.members (sub_group);
+create index if not exists members_sub_groups_gin on public.members using gin (sub_groups);
 create index if not exists members_auth_user_id_idx on public.members (auth_user_id);
+
+-- Keeps sub_group and sub_groups consistent on every write, from either side:
+-- an empty array is seeded from the primary, the primary is always forced into
+-- the set, duplicates are dropped (order kept) and the primary is realigned to
+-- the first element. This is what makes a direct array edit in the Supabase
+-- table editor safe without touching sub_group by hand.
+create or replace function public.normalize_member_sub_groups()
+returns trigger
+language plpgsql
+as $$
+declare
+  seen text[] := '{}';
+  g    text;
+begin
+  if new.sub_groups is null or cardinality(new.sub_groups) = 0 then
+    new.sub_groups := array[new.sub_group];
+  end if;
+  if not (new.sub_group = any(new.sub_groups)) then
+    new.sub_groups := array_prepend(new.sub_group, new.sub_groups);
+  end if;
+  foreach g in array new.sub_groups loop
+    if not (g = any(seen)) then
+      seen := array_append(seen, g);
+    end if;
+  end loop;
+  new.sub_groups := seen;
+  new.sub_group := new.sub_groups[1];
+  return new;
+end;
+$$;
+
+drop trigger if exists members_normalize_sub_groups on public.members;
+create trigger members_normalize_sub_groups
+  before insert or update on public.members
+  for each row execute function public.normalize_member_sub_groups();
 
 -- ---------------------------------------------------------------------------
 -- 2. ACTIVITY TABLES
@@ -237,7 +284,9 @@ as $$
 $$;
 
 -- True when the signed-in member may see records owned by target_member:
--- their own, anything in their sub-group (admin), or everything (super-admin).
+-- their own, anything in a sub-group they share (admin), or everything
+-- (super-admin). The admin branch intersects the FULL group set on both sides,
+-- so an admin sees every member who shares at least one of their groups.
 create or replace function public.can_view_member(target_member uuid)
 returns boolean
 language sql
@@ -254,7 +303,7 @@ as $$
         or me.role = 'super-admin'
         or (
           me.role = 'admin'
-          and me.sub_group = (select t.sub_group from public.members t where t.id = target_member)
+          and me.sub_groups && (select t.sub_groups from public.members t where t.id = target_member)
         )
       )
   );
@@ -272,6 +321,7 @@ set search_path = ''
 as $$
 declare
   claimed uuid;
+  chosen  text;
 begin
   -- Claim a pre-existing (seeded) member record with the same email.
   update public.members
@@ -281,14 +331,16 @@ begin
   returning id into claimed;
 
   if claimed is null then
-    insert into public.members (auth_user_id, first_name, last_name, email, company, sub_group)
+    chosen := coalesce(nullif(new.raw_user_meta_data ->> 'sub_group', ''), 'RED Central');
+    insert into public.members (auth_user_id, first_name, last_name, email, company, sub_group, sub_groups)
     values (
       new.id,
       coalesce(nullif(new.raw_user_meta_data ->> 'first_name', ''), 'New'),
       coalesce(nullif(new.raw_user_meta_data ->> 'last_name', ''), 'Member'),
       new.email,
       nullif(new.raw_user_meta_data ->> 'company', ''),
-      coalesce(nullif(new.raw_user_meta_data ->> 'sub_group', ''), 'RED Central')
+      chosen,
+      array[chosen]
     )
     on conflict (email) do nothing;
   end if;

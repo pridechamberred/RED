@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell"
 import { FormHeader } from "@/components/form-header"
 import { MemberAvatar } from "@/components/member-avatar"
 import { getCurrentMember, getMemberById } from "@/lib/data"
-import { isAdmin, memberName } from "@/lib/types"
+import { formatSubGroups, isAdmin, memberName } from "@/lib/types"
 import { ChevronRight, Handshake, Gift } from "lucide-react"
 
 const ACTIONS = [
@@ -44,7 +44,7 @@ export default async function MemberActionPage({ params }: { params: Promise<{ i
         <span className="flex min-w-0 flex-col">
           <span className="truncate font-semibold leading-tight">{name}</span>
           <span className="truncate text-sm leading-relaxed text-muted-foreground">
-            {member.company ? `${member.company} · ${member.sub_group}` : member.sub_group}
+            {member.company ? `${member.company} · ${formatSubGroups(member)}` : formatSubGroups(member)}
           </span>
         </span>
       </div>

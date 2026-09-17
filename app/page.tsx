@@ -6,7 +6,7 @@ import { UpcomingMeetings } from "@/components/upcoming-meetings"
 import { BrandMark } from "@/components/brand-mark"
 import { MemberSearch } from "@/components/member-search"
 import { getCurrentMember, getSearchableMembers } from "@/lib/data"
-import { isAdmin } from "@/lib/types"
+import { formatSubGroups, isAdmin } from "@/lib/types"
 import { BadgeDollarSign, CalendarDays, Heart, UserPlus } from "lucide-react"
 
 export default async function HomePage() {
@@ -22,7 +22,7 @@ export default async function HomePage() {
           <div className="flex items-center justify-between gap-3">
             <BrandMark />
             <span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-muted-foreground">
-              {me.sub_group}
+              {formatSubGroups(me)}
             </span>
           </div>
           <p className="text-xs leading-relaxed text-muted-foreground">RED Group activity tracker</p>

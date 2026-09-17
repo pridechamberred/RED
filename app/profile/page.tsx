@@ -6,7 +6,7 @@ import { PasskeyManager } from "@/components/passkey-manager"
 import { Button } from "@/components/ui/button"
 import { AvatarUpload } from "@/app/profile/avatar-upload"
 import { getCurrentMember } from "@/lib/data"
-import { isAdmin, memberName } from "@/lib/types"
+import { formatSubGroups, isAdmin, memberName, resolveSubGroups } from "@/lib/types"
 import { KeyRound, LogOut } from "lucide-react"
 
 const ROLE_LABELS = {
@@ -22,7 +22,7 @@ export default async function ProfilePage() {
   const rows = [
     { label: "Business", value: me.company || "—" },
     { label: "Email", value: me.email },
-    { label: "Sub-group", value: me.sub_group },
+    { label: resolveSubGroups(me).length > 1 ? "Sub-groups" : "Sub-group", value: formatSubGroups(me) },
     { label: "Role", value: ROLE_LABELS[me.role] },
   ]
 

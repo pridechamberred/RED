@@ -19,6 +19,7 @@ import {
   isAdmin,
   memberName,
   REFERRAL_SOURCES,
+  resolveSubGroups,
   SUB_GROUPS,
   type ReferralSource,
   type SubGroup,
@@ -754,18 +755,29 @@ export async function setAttendance(form: FormData): Promise<ActionResult> {
     return { ok: false, error: "This meeting isn't linked to a sub-group, so attendance can't be recorded." }
   }
 
-  // A sub-group admin is confined to their own group; super-admins are not.
-  if (me.role === "admin" && me.sub_group !== meeting.subGroup) {
+  // A sub-group admin is confined to their own group(s); super-admins are not.
+  if (me.role === "admin" && !resolveSubGroups(me).includes(meeting.subGroup)) {
     return { ok: false, error: "You can only record attendance for your own sub-group." }
   }
 
   const supabase = await createClient()
 
   // Confirm the subject really belongs on this register, so a tampered id can't
-  // attach a stranger — or another group's member — to the meeting.
+  // attach a stranger — or a member of no shared group — to the meeting. A
+  // member counts if the meeting's group is among their groups (sub_groups,
+  // migration 015); we fall back to the primary sub_group when that column is
+  // not present yet.
   if (subjectKind === "member") {
-    const { data } = await supabase.from("members").select("sub_group").eq("id", subjectId).maybeSingle()
-    if (!data || (data as { sub_group: SubGroup }).sub_group !== meeting.subGroup) {
+    const withGroups = await supabase
+      .from("members")
+      .select("sub_group, sub_groups")
+      .eq("id", subjectId)
+      .maybeSingle()
+    const { data } =
+      withGroups.error?.code === "42703"
+        ? await supabase.from("members").select("sub_group").eq("id", subjectId).maybeSingle()
+        : withGroups
+    if (!data || !resolveSubGroups(data as { sub_group: SubGroup; sub_groups?: SubGroup[] | null }).includes(meeting.subGroup)) {
       return { ok: false, error: GENERIC_ERROR }
     }
   } else {

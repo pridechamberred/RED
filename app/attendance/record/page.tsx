@@ -11,7 +11,7 @@ import {
   REGISTER_WINDOW_DAYS,
   type RegisterSummary,
 } from "@/lib/attendance"
-import { isAdmin } from "@/lib/types"
+import { isAdmin, resolveSubGroups } from "@/lib/types"
 
 /**
  * "8 attended · 2 absent · 1 substitute".
@@ -66,10 +66,14 @@ export default async function AttendanceIndexPage() {
   const now = new Date()
   const all = await getRegisterMeetings(now)
 
-  // A sub-group admin only registers their own group's meetings. Meetings whose
-  // title matches no sub-group are dropped: there is no roster to show.
+  // A sub-group admin only registers their own group's meetings (any of their
+  // groups, if they are in more than one). Meetings whose title matches no
+  // sub-group are dropped: there is no roster to show.
+  const myGroups = resolveSubGroups(me)
   const meetings =
-    me.role === "super-admin" ? all.filter((m) => m.subGroup) : all.filter((m) => m.subGroup === me.sub_group)
+    me.role === "super-admin"
+      ? all.filter((m) => m.subGroup)
+      : all.filter((m) => m.subGroup !== null && myGroups.includes(m.subGroup))
 
   const summaries = await getRegisterSummaries(meetings)
 
@@ -80,7 +84,7 @@ export default async function AttendanceIndexPage() {
         subtitle={
           me.role === "super-admin"
             ? `Meetings from the last ${REGISTER_WINDOW_DAYS} days, across all sub-groups.`
-            : `${me.sub_group} meetings from the last ${REGISTER_WINDOW_DAYS} days.`
+            : `${myGroups.join(", ")} meetings from the last ${REGISTER_WINDOW_DAYS} days.`
         }
         backHref="/attendance"
         backLabel="Attendance"

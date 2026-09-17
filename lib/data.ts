@@ -44,6 +44,24 @@ export async function getCurrentMember(): Promise<Member | null> {
 /** Postgres "undefined_column" — the column named in the select does not exist. */
 const UNDEFINED_COLUMN = "42703"
 
+/**
+ * Coerces raw member rows into MemberOption, tolerating rows that came back
+ * without the optional `sub_groups` / `avatar_url` columns (pre-migration
+ * fallbacks). `sub_groups` is left undefined when absent so `resolveSubGroups`
+ * falls back to the primary; `avatar_url` defaults to null (render initials).
+ */
+function normalizeMemberOptions(data: unknown): MemberOption[] {
+  return ((data as Record<string, unknown>[] | null) ?? []).map((m) => ({
+    id: m.id as string,
+    first_name: m.first_name as string,
+    last_name: m.last_name as string,
+    company: (m.company as string | null) ?? null,
+    sub_group: m.sub_group as MemberOption["sub_group"],
+    sub_groups: (m.sub_groups as MemberOption["sub_groups"]) ?? undefined,
+    avatar_url: (m.avatar_url as string | null) ?? null,
+  }))
+}
+
 /** Everyone except the signed-in member — this is what the search box filters over. */
 export async function getSearchableMembers(excludeMemberId: string): Promise<MemberOption[]> {
   const supabase = await createClient()
@@ -51,31 +69,27 @@ export async function getSearchableMembers(excludeMemberId: string): Promise<Mem
   const query = (fields: string) =>
     supabase.from("members").select(fields).neq("id", excludeMemberId).order("first_name")
 
-  const { data, error } = await query("id, first_name, last_name, company, sub_group, avatar_url")
+  // Two optional columns can each be absent when their migration has not been
+  // run yet: sub_groups (015) and avatar_url (010). A select naming a missing
+  // column errors with 42703 and this feeds the home-screen search, so we cascade
+  // from "everything" down to the pre-migration shape rather than let the whole
+  // list come back empty. `normalizeMemberOptions` fills the gaps either way.
+  const attempts = [
+    "id, first_name, last_name, company, sub_group, sub_groups, avatar_url",
+    "id, first_name, last_name, company, sub_group, avatar_url",
+    "id, first_name, last_name, company, sub_group",
+  ]
 
-  if (!error) return (data as unknown as MemberOption[]) ?? []
-
-  // Avatars arrived in migration 010. If the code is deployed before that SQL
-  // is run, selecting the column fails and this function is what feeds the
-  // home screen — so the whole member search would come back empty, looking
-  // like every member had vanished. Retry without it and render initials.
-  //
-  // Safe to simplify back to a single select once 010 is applied everywhere.
-  if (error.code === UNDEFINED_COLUMN) {
-    console.log("[v0] getSearchableMembers: members.avatar_url missing, run migration 010. Falling back.")
-    const { data: legacy, error: legacyError } = await query("id, first_name, last_name, company, sub_group")
-
-    if (legacyError) {
-      console.log("[v0] getSearchableMembers fallback error:", legacyError.message)
+  for (const fields of attempts) {
+    const { data, error } = await query(fields)
+    if (!error) return normalizeMemberOptions(data)
+    if (error.code !== UNDEFINED_COLUMN) {
+      console.log("[v0] getSearchableMembers error:", error.message)
       return []
     }
-    return ((legacy as unknown as Omit<MemberOption, "avatar_url">[]) ?? []).map((m) => ({
-      ...m,
-      avatar_url: null,
-    }))
   }
 
-  console.log("[v0] getSearchableMembers error:", error.message)
+  console.log("[v0] getSearchableMembers: even the minimal member select failed.")
   return []
 }
 
@@ -181,16 +195,27 @@ export async function getMyDoneDeals(memberId: string, year: number): Promise<De
 /** All members (used by admin filters). */
 export async function getAllMembers(): Promise<MemberOption[]> {
   const supabase = await createClient()
-  const { data, error } = await supabase
+
+  // Try with sub_groups (migration 015); fall back to the primary-only shape if
+  // the column is not there yet, so the admin dashboard never comes back empty.
+  const withGroups = await supabase
     .from("members")
-    .select("id, first_name, last_name, company, sub_group")
+    .select("id, first_name, last_name, company, sub_group, sub_groups")
     .order("first_name")
+
+  const { data, error } =
+    withGroups.error?.code === UNDEFINED_COLUMN
+      ? await supabase
+          .from("members")
+          .select("id, first_name, last_name, company, sub_group")
+          .order("first_name")
+      : withGroups
 
   if (error) {
     console.log("[v0] getAllMembers error:", error.message)
     return []
   }
-  return (data as MemberOption[]) ?? []
+  return normalizeMemberOptions(data)
 }
 
 export async function getMemberById(id: string): Promise<Member | null> {

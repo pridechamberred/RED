@@ -11,7 +11,8 @@ export type NewMemberInput = {
   lastName: string
   email: string
   company: string
-  subGroup: string
+  /** One or more groups. The first (in SUB_GROUPS order) becomes the primary. */
+  subGroups: string[]
   role: string
   password: string
 }
@@ -19,7 +20,7 @@ export type NewMemberInput = {
 export type AddMemberResult =
   | {
       ok: true
-      member: { name: string; email: string; company: string | null; subGroup: SubGroup; role: Role }
+      member: { name: string; email: string; company: string | null; subGroups: SubGroup[]; role: Role }
       password: string
     }
   | { ok: false; message: string }
@@ -28,6 +29,17 @@ const ASSIGNABLE_ROLES: Role[] = ["user", "admin", "super-admin"]
 
 function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+/** True when a write failed only because `members.sub_groups` (migration 015)
+ * does not exist yet, so we can retry the write without it. */
+function isMissingSubGroupsColumn(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  return (
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    (error.message?.toLowerCase().includes("sub_groups") ?? false)
+  )
 }
 
 /**
@@ -60,14 +72,17 @@ export async function addMember(input: NewMemberInput): Promise<AddMemberResult>
   if (!isEmail(email)) {
     return { ok: false, message: "Please enter a valid email address." }
   }
-  if (!SUB_GROUPS.includes(input.subGroup as SubGroup)) {
-    return { ok: false, message: "Please choose a sub-group." }
+
+  // Canonicalise to valid groups in SUB_GROUPS order; the first is the primary.
+  const subGroups = SUB_GROUPS.filter((g) => input.subGroups.includes(g))
+  if (subGroups.length === 0) {
+    return { ok: false, message: "Please choose at least one sub-group." }
   }
   if (!ASSIGNABLE_ROLES.includes(input.role as Role)) {
     return { ok: false, message: "Please choose a valid permission level." }
   }
 
-  const subGroup = input.subGroup as SubGroup
+  const subGroup = subGroups[0]
   const role = input.role as Role
 
   // Only super-admins may hand out elevated access.
@@ -131,38 +146,49 @@ export async function addMember(input: NewMemberInput): Promise<AddMemberResult>
   const authUserId = created.user.id
 
   // A database trigger creates the member row from the metadata above. Set the
-  // fields it cannot know (role) and re-assert the rest, so the record is
-  // correct even if the deployed trigger is an older revision.
-  const { data: updated, error: updateError } = await admin
-    .from("members")
-    .update({
-      first_name: firstName,
-      last_name: lastName,
-      company: company || null,
-      sub_group: subGroup,
-      role,
-    })
-    .eq("auth_user_id", authUserId)
-    .select("id")
-    .maybeSingle()
+  // fields it cannot know (role, and the full sub_groups list) and re-assert the
+  // rest, so the record is correct even if the deployed trigger is an older
+  // revision. `sub_groups` (migration 015) may not exist yet, so retry without
+  // it on a missing-column error — pre-015 the member is simply single-group.
+  const updatePayload = {
+    first_name: firstName,
+    last_name: lastName,
+    company: company || null,
+    sub_group: subGroup,
+    sub_groups: subGroups,
+    role,
+  }
+  const runUpdate = (payload: Record<string, unknown>) =>
+    admin.from("members").update(payload).eq("auth_user_id", authUserId).select("id").maybeSingle()
+
+  let { data: updated, error: updateError } = await runUpdate(updatePayload)
+  if (updateError && isMissingSubGroupsColumn(updateError)) {
+    const { sub_groups: _omit, ...withoutGroups } = updatePayload
+    ;({ data: updated, error: updateError } = await runUpdate(withoutGroups))
+  }
 
   let memberRowId = updated?.id ?? null
 
   // No row means the trigger did not fire — insert it directly.
   if (!updateError && !memberRowId) {
-    const { data: inserted, error: insertError } = await admin
-      .from("members")
-      .insert({
-        auth_user_id: authUserId,
-        first_name: firstName,
-        last_name: lastName,
-        email,
-        company: company || null,
-        sub_group: subGroup,
-        role,
-      })
-      .select("id")
-      .maybeSingle()
+    const insertPayload = {
+      auth_user_id: authUserId,
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      company: company || null,
+      sub_group: subGroup,
+      sub_groups: subGroups,
+      role,
+    }
+    const runInsert = (payload: Record<string, unknown>) =>
+      admin.from("members").insert(payload).select("id").maybeSingle()
+
+    let { data: inserted, error: insertError } = await runInsert(insertPayload)
+    if (insertError && isMissingSubGroupsColumn(insertError)) {
+      const { sub_groups: _omit, ...withoutGroups } = insertPayload
+      ;({ data: inserted, error: insertError } = await runInsert(withoutGroups))
+    }
 
     if (insertError) {
       console.error("addMember insert failed:", insertError.message)
@@ -183,7 +209,7 @@ export async function addMember(input: NewMemberInput): Promise<AddMemberResult>
 
   return {
     ok: true,
-    member: { name: `${firstName} ${lastName}`, email, company: company || null, subGroup, role },
+    member: { name: `${firstName} ${lastName}`, email, company: company || null, subGroups, role },
     password,
   }
 }

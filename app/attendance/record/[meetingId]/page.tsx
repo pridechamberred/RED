@@ -5,7 +5,7 @@ import { FormHeader } from "@/components/form-header"
 import { AttendanceToggle } from "@/components/attendance-toggle"
 import { getCurrentMember } from "@/lib/data"
 import { findRegisterMeeting, getRegister, meetingDateFormat } from "@/lib/attendance"
-import { isAdmin } from "@/lib/types"
+import { isAdmin, resolveSubGroups } from "@/lib/types"
 
 export default async function AttendanceRegisterPage({
   params,
@@ -22,8 +22,8 @@ export default async function AttendanceRegisterPage({
   const meeting = await findRegisterMeeting(id)
   if (!meeting || !meeting.subGroup) notFound()
 
-  // An admin may only register meetings of their own sub-group.
-  if (me.role === "admin" && meeting.subGroup !== me.sub_group) redirect("/attendance/record")
+  // An admin may only register meetings of their own sub-group(s).
+  if (me.role === "admin" && !resolveSubGroups(me).includes(meeting.subGroup)) redirect("/attendance/record")
 
   const { members, guests } = await getRegister(meeting)
 

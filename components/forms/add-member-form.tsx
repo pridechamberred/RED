@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FormError } from "@/components/form-error"
+import { SubGroupMultiSelect } from "@/components/forms/sub-group-multi-select"
 import { PASSWORD_RULES, isPasswordValid } from "@/lib/password-policy"
-import { SUB_GROUPS, type Role, type SubGroup } from "@/lib/types"
+import { type Role, type SubGroup } from "@/lib/types"
 import { addMember, type AddMemberResult } from "@/app/admin/add-member/actions"
 import { Check, Copy, Loader2, X } from "lucide-react"
 
@@ -31,7 +32,7 @@ export function AddMemberForm({
   const [lastName, setLastName] = useState("")
   const [email, setEmail] = useState("")
   const [company, setCompany] = useState("")
-  const [subGroup, setSubGroup] = useState<SubGroup>(defaultSubGroup)
+  const [subGroups, setSubGroups] = useState<SubGroup[]>([defaultSubGroup])
   const [role, setRole] = useState<Role>("user")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
@@ -70,8 +71,8 @@ export function AddMemberForm({
               <dd className="break-all text-right font-mono font-semibold">{created.password}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">Sub-group</dt>
-              <dd className="text-right font-semibold">{created.member.subGroup}</dd>
+              <dt className="text-muted-foreground">{created.member.subGroups.length > 1 ? "Sub-groups" : "Sub-group"}</dt>
+              <dd className="text-right font-semibold">{created.member.subGroups.join(", ")}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">Permission</dt>
@@ -134,8 +135,13 @@ export function AddMemberForm({
       return
     }
 
+    if (subGroups.length === 0) {
+      setError("Please choose at least one sub-group.")
+      return
+    }
+
     setPending(true)
-    const result = await addMember({ firstName, lastName, email, company, subGroup, role, password })
+    const result = await addMember({ firstName, lastName, email, company, subGroups, role, password })
 
     if (result.ok) {
       setCreated(result)
@@ -200,19 +206,12 @@ export function AddMemberForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label htmlFor="subGroup">Sub-group</Label>
-        <Select value={subGroup} onValueChange={(v) => setSubGroup((v as SubGroup) ?? subGroup)}>
-          <SelectTrigger id="subGroup" className="h-12 w-full" aria-label="Sub-group">
-            <SelectValue>{(v: string | null) => v ?? "Select a sub-group"}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {SUB_GROUPS.map((group) => (
-              <SelectItem key={group} value={group}>
-                {group}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Label id="sub-groups-label">Sub-group(s)</Label>
+        <SubGroupMultiSelect value={subGroups} onChange={setSubGroups} ariaLabel="Sub-groups" />
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Tap every group this member belongs to. Most are in one; pick more than one for a member who attends
+          multiple. The first is their primary group.
+        </p>
       </div>
 
       {canAssignRoles ? (
@@ -294,7 +293,7 @@ export function AddMemberForm({
         type="submit"
         size="lg"
         className="h-12 w-full text-base"
-        disabled={pending || !isPasswordValid(password) || !matches}
+        disabled={pending || !isPasswordValid(password) || !matches || subGroups.length === 0}
       >
         {pending ? <Loader2 className="size-5 animate-spin" aria-hidden /> : "Add member"}
         {pending ? <span className="sr-only">Adding member</span> : null}

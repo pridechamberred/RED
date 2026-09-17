@@ -2,7 +2,7 @@ import { redirect } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
 import { AdminDashboard } from "@/components/admin-dashboard"
 import { getActivityFeed, getAllMembers, getCurrentMember, getGuestInvites } from "@/lib/data"
-import { isAdmin } from "@/lib/types"
+import { isAdmin, resolveSubGroups, subGroupsOverlap } from "@/lib/types"
 
 export default async function AdminPage() {
   const me = await getCurrentMember()
@@ -16,8 +16,13 @@ export default async function AdminPage() {
     getGuestInvites(),
   ])
 
+  // A sub-group admin sees every member who shares one of their groups, so a
+  // member of two groups shows up for both groups' admins.
+  const myGroups = resolveSubGroups(me)
   const members =
-    me.role === "super-admin" ? allMembers : allMembers.filter((m) => m.sub_group === me.sub_group)
+    me.role === "super-admin"
+      ? allMembers
+      : allMembers.filter((m) => subGroupsOverlap(resolveSubGroups(m), myGroups))
 
   const scopeLabel =
     me.role === "super-admin" ? "All activity across all sub-groups" : `All activity in ${me.sub_group}`

@@ -5,7 +5,7 @@ import { FormHeader } from "@/components/form-header"
 import { AttendanceReportFilters } from "@/components/attendance-report-filters"
 import { getCurrentMember } from "@/lib/data"
 import { getAttendanceReport, getSubstituteReport, type MemberAttendanceReportRow } from "@/lib/attendance"
-import { SUB_GROUPS, type SubGroup, formatDate, isAdmin, todayISO } from "@/lib/types"
+import { SUB_GROUPS, type SubGroup, formatDate, isAdmin, resolveSubGroups, todayISO } from "@/lib/types"
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -49,9 +49,10 @@ export default async function AttendanceReportPage({
   const from = params.from && ISO_DATE.test(params.from) ? params.from : shiftISODate(today, -DEFAULT_RANGE_DAYS)
   const to = params.to && ISO_DATE.test(params.to) ? params.to : today
 
-  // A sub-group admin is locked to their own group; only a super-admin may pick.
+  // A sub-group admin is locked to their own group(s); only a super-admin may
+  // pick any. An admin in two groups sees both.
   const requestedGroup = SUB_GROUPS.includes(params.group as SubGroup) ? (params.group as SubGroup) : null
-  const allowedForRole: SubGroup[] = me.role === "super-admin" ? [...SUB_GROUPS] : [me.sub_group]
+  const allowedForRole: SubGroup[] = me.role === "super-admin" ? [...SUB_GROUPS] : resolveSubGroups(me)
   const activeGroup = requestedGroup && allowedForRole.includes(requestedGroup) ? requestedGroup : null
   const subGroups = activeGroup ? [activeGroup] : allowedForRole
 
@@ -82,7 +83,7 @@ export default async function AttendanceReportPage({
         subtitle={
           me.role === "super-admin"
             ? "RED meeting attendance by member."
-            : `${me.sub_group} meeting attendance by member.`
+            : `${resolveSubGroups(me).join(", ")} meeting attendance by member.`
         }
         backHref="/attendance"
         backLabel="Attendance"
