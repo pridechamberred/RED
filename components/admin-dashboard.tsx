@@ -14,8 +14,11 @@ import {
   type ActivityType,
   type GuestInviteRow,
   type MemberOption,
+  type SubGroup,
   formatMoney,
+  formatSubGroups,
   memberName,
+  resolveSubGroups,
 } from "@/lib/types"
 import { filterActivityRows } from "@/lib/report-filters"
 import { CalendarCog, ChevronRight, Download, SlidersHorizontal, UserPlus } from "lucide-react"
@@ -116,7 +119,7 @@ export function AdminDashboard({
   const membersInScope = useMemo(() => {
     const ids = new Set(rows.map((r) => r.memberId))
     return members.filter(
-      (m) => ids.has(m.id) && (subGroup === "all" || m.sub_group === subGroup),
+      (m) => ids.has(m.id) && (subGroup === "all" || resolveSubGroups(m).includes(subGroup as SubGroup)),
     )
   }, [rows, members, subGroup])
 
@@ -452,7 +455,7 @@ export function AdminDashboard({
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate font-semibold leading-tight">{memberName(m)}</span>
                     <span className="truncate text-sm leading-relaxed text-muted-foreground">
-                      {m.company ? `${m.company} · ${m.sub_group}` : m.sub_group}
+                      {m.company ? `${m.company} · ${formatSubGroups(m)}` : formatSubGroups(m)}
                     </span>
                   </span>
                   <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden />

@@ -8,7 +8,7 @@ import {
   subGroupFromTitle,
   REGISTER_WINDOW_DAYS,
 } from "@/lib/calendar"
-import { memberName, SUB_GROUPS, type SubGroup } from "@/lib/types"
+import { memberName, resolveSubGroups, SUB_GROUPS, type SubGroup } from "@/lib/types"
 import type { AttendanceMark, AttendanceStatus } from "@/lib/attendance-status"
 
 export { REGISTER_WINDOW_DAYS }
@@ -128,7 +128,44 @@ async function getMarks(meetingId: string): Promise<Map<string, Mark>> {
   return marks
 }
 
+/** Postgres "undefined_column" — a named column does not exist (pre-migration). */
+const UNDEFINED_COLUMN = "42703"
+
 type MemberRow = { id: string; first_name: string; last_name: string; company: string | null }
+
+/**
+ * Members who belong to a sub-group, i.e. whose `sub_groups` (migration 015)
+ * contains it — so a member of two groups appears on both registers.
+ *
+ * Falls back to the primary `sub_group` equality check when the `sub_groups`
+ * column is not present yet, matching the single-group behaviour the app had
+ * before 015 and keeping registers working while the migration is pending.
+ */
+async function getGroupMembers(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  subGroup: SubGroup,
+): Promise<MemberRow[]> {
+  const withGroups = await supabase
+    .from("members")
+    .select("id, first_name, last_name, company")
+    .contains("sub_groups", [subGroup])
+    .order("first_name")
+
+  const { data, error } =
+    withGroups.error?.code === UNDEFINED_COLUMN
+      ? await supabase
+          .from("members")
+          .select("id, first_name, last_name, company")
+          .eq("sub_group", subGroup)
+          .order("first_name")
+      : withGroups
+
+  if (error) {
+    console.error("getGroupMembers error:", error.message)
+    return []
+  }
+  return (data ?? []) as MemberRow[]
+}
 
 type GuestRow = {
   id: string
@@ -149,13 +186,9 @@ export async function getRegister(meeting: RegisterMeeting): Promise<{
 
   const supabase = await createClient()
 
-  const [marks, membersResult, guestsResult] = await Promise.all([
+  const [marks, groupMembers, guestsResult] = await Promise.all([
     getMarks(meeting.id),
-    supabase
-      .from("members")
-      .select("id, first_name, last_name, company")
-      .eq("sub_group", meeting.subGroup)
-      .order("first_name"),
+    getGroupMembers(supabase, meeting.subGroup),
     // Guests are matched on the occurrence id, so a guest invited to September's
     // meeting does not appear on October's register for the same series.
     supabase
@@ -165,10 +198,9 @@ export async function getRegister(meeting: RegisterMeeting): Promise<{
       .order("created_at"),
   ])
 
-  if (membersResult.error) console.error("getRegister members error:", membersResult.error.message)
   if (guestsResult.error) console.error("getRegister guests error:", guestsResult.error.message)
 
-  const members: RosterEntry[] = ((membersResult.data ?? []) as MemberRow[]).map((m) => {
+  const members: RosterEntry[] = groupMembers.map((m) => {
     const mark = marks.get(`m:${m.id}`)
     return {
       id: m.id,
@@ -285,6 +317,8 @@ type ReportMemberRow = {
   last_name: string
   company: string | null
   sub_group: SubGroup
+  /** All of the member's groups (migration 015); absent pre-015. */
+  sub_groups?: SubGroup[] | null
 }
 
 /**
@@ -344,11 +378,23 @@ export async function getAttendanceReport(opts: {
     }
   }
 
-  const { data: memberData, error: memberError } = await supabase
+  // A member is in the report for every group they belong to (sub_groups,
+  // migration 015). Falls back to primary-group equality when the column is not
+  // present yet — identical to the old single-group behaviour.
+  const withGroups = await supabase
     .from("members")
-    .select("id, first_name, last_name, company, sub_group")
-    .in("sub_group", subGroups)
+    .select("id, first_name, last_name, company, sub_group, sub_groups")
+    .overlaps("sub_groups", subGroups)
     .order("first_name")
+
+  const { data: memberData, error: memberError } =
+    withGroups.error?.code === UNDEFINED_COLUMN
+      ? await supabase
+          .from("members")
+          .select("id, first_name, last_name, company, sub_group")
+          .in("sub_group", subGroups)
+          .order("first_name")
+      : withGroups
 
   if (memberError) console.error("getAttendanceReport members error:", memberError.message)
   const members = (memberData ?? []) as ReportMemberRow[]
@@ -357,7 +403,7 @@ export async function getAttendanceReport(opts: {
   return subGroups.map((group) => {
     const meetingIds = meetingIdsByGroup.get(group) ?? []
     const rows: MemberAttendanceReportRow[] = members
-      .filter((m) => m.sub_group === group)
+      .filter((m) => resolveSubGroups(m).includes(group))
       .map((m) => {
         let attended = 0
         let substitute = 0

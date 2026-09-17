@@ -12,7 +12,23 @@ export type Member = {
   email: string
   company: string | null
   role: Role
+  /**
+   * The member's PRIMARY sub-group: a single value that satisfies the DB CHECK
+   * and drives every display and single-group code path. Always one of the five.
+   */
   sub_group: SubGroup
+  /**
+   * ALL sub-groups the member belongs to, including the primary (migration 015).
+   *
+   * A member can be a full member of more than one group. Membership scoping —
+   * who appears on a register, which admins can see them, and which groups their
+   * attendance is reported under — is driven by this list, not by `sub_group`.
+   *
+   * Optional in the type because `getCurrentMember` uses `select("*")`: before
+   * 015 runs the column is simply absent from the row, and `resolveSubGroups`
+   * falls back to `[sub_group]`, so the app behaves exactly as it did before.
+   */
+  sub_groups?: SubGroup[] | null
   /** Uploaded profile picture. Null means "no picture" — render initials. */
   avatar_url: string | null
   /**
@@ -34,6 +50,8 @@ export type MemberOption = {
   last_name: string
   company: string | null
   sub_group: SubGroup
+  /** All of the member's groups (migration 015). Absent pre-015 — see `Member`. */
+  sub_groups?: SubGroup[] | null
   avatar_url: string | null
 }
 
@@ -153,6 +171,31 @@ export type GuestInviteRow = {
   /** The member who invited the guest. */
   memberId: string
   memberSubGroup: SubGroup
+}
+
+/**
+ * Every sub-group a member belongs to, always as a non-empty list.
+ *
+ * Reads `sub_groups` (migration 015) when present and valid, otherwise falls
+ * back to `[sub_group]`. This is THE single place membership is resolved, so a
+ * pre-015 database (no `sub_groups` column) and a member left on one group both
+ * behave identically to the old single-group model.
+ */
+export function resolveSubGroups(m: { sub_group: SubGroup; sub_groups?: SubGroup[] | null }): SubGroup[] {
+  const list = (m.sub_groups ?? []).filter((g): g is SubGroup => SUB_GROUPS.includes(g as SubGroup))
+  // De-dupe defensively; the DB trigger keeps this clean but direct edits may not.
+  const unique = [...new Set(list)]
+  return unique.length > 0 ? unique : [m.sub_group]
+}
+
+/** True when the two group lists share at least one sub-group. */
+export function subGroupsOverlap(a: readonly SubGroup[], b: readonly SubGroup[]): boolean {
+  return a.some((g) => b.includes(g))
+}
+
+/** Display string for a member's groups, e.g. "RED Central, RED Uptown". */
+export function formatSubGroups(m: { sub_group: SubGroup; sub_groups?: SubGroup[] | null }): string {
+  return resolveSubGroups(m).join(", ")
 }
 
 export function memberName(m: { first_name: string; last_name: string }) {
