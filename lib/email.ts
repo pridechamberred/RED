@@ -1,5 +1,22 @@
 import { Resend } from "resend"
 
+import { mergeCopy } from "@/lib/email-templates"
+import { resolveEmailCopy } from "@/lib/email-copy"
+
+/*
+ * Every email is now rendered from editable copy blocks (see
+ * `lib/email-templates.ts`), which a super-admin can reword in the admin
+ * editor. This file keeps everything that must NOT be editable: the layout,
+ * the branding, the merge/escaping logic, and the single delivery path.
+ *
+ * The golden rule that keeps untrusted names safe: in the HTML build the copy
+ * is escaped first, then merge values are substituted. Data values are escaped
+ * where they are put into the `htmlVars` map; a couple of layout-owned values
+ * (links) are intentionally raw HTML. Copy is authored only by super-admins, so
+ * it is trusted, but escaping it anyway means a stray `<` can never break a
+ * layout either.
+ */
+
 type ReferralEmailInput = {
   to: string
   recipientFirstName: string
@@ -14,11 +31,6 @@ type ReferralEmailInput = {
   details: string
 }
 
-/**
- * An offline referral — one already passed in person or by phone — carries no
- * contact details or notes, because the recipient already has them. So this
- * email confirms a record rather than delivering anything.
- */
 type OfflineReferralEmailInput = {
   to: string
   recipientFirstName: string
@@ -28,32 +40,71 @@ type OfflineReferralEmailInput = {
   occurredOn: string
 }
 
-/**
- * The only email in the app that goes to someone OUTSIDE the chamber: the
- * person being referred, when their referrer explicitly opts in.
- *
- * Consequences of that, which the wording is built around:
- * - It names the member who will make contact, and their company, so the
- *   follow-up call is expected rather than cold.
- * - It deliberately carries NO contact details for anyone — not the referred
- *   person's own, and no direct line for the member. The member reaches out;
- *   this email does not hand an outsider anyone's details.
- * - It is signed by the *referrer's* sub-group, since the referrer is the
- *   recipient's only real connection to the chamber.
- */
 type ReferredPersonEmailInput = {
   to: string
-  /** The referred person's name, exactly as the member typed it. */
   referredName: string
-  /** Who made the recommendation. */
   referrerName: string
-  /** The referrer's sub-group, used for the sign-off. */
   referrerSubGroup: string
-  /** The member who will be in touch. */
   recipientName: string
-  /** Their company. Null when it isn't on their profile. */
   recipientCompany: string | null
 }
+
+type PasswordResetEmailInput = {
+  to: string
+  recipientFirstName: string
+  resetUrl: string
+  /** How long the link stays valid, in words, e.g. "1 hour". */
+  expiresIn: string
+}
+
+type VousLoggedEmailInput = {
+  to: string
+  recipientFirstName: string
+  loggerName: string
+  /** ISO date (yyyy-mm-dd) of the vous itself, not of this email. */
+  vousDate: string
+  logItUrl: string
+}
+
+type GuestInviteEmailInput = {
+  to: string
+  guestName: string
+  inviterName: string
+  inviterCompany: string | null
+  subGroup: string
+  meetingLabel: string | null
+  meetingLocation: string | null
+}
+
+type GuestRegisteredGuestEmailInput = {
+  to: string
+  guestName: string
+  hostName: string
+  subGroup: string
+  meetingLabel: string
+  meetingLocation: string | null
+}
+
+type GuestRegisteredHostEmailInput = {
+  to: string
+  hostFirstName: string
+  guestName: string
+  guestCompany: string | null
+  meetingLabel: string
+  meetingLocation: string | null
+}
+
+type ScraperFailureEmailInput = {
+  /** The underlying error message from the scrape attempt. */
+  error: string
+  /** The window that was being fetched, e.g. "2026-08-13 to 2026-09-13". */
+  window: string
+  /** Whether the failure came from the daily cron or an admin's manual run. */
+  trigger: "cron" | "manual"
+}
+
+type Copy = Record<string, string>
+type RenderedEmail = { subject: string; html: string; text: string }
 
 function escapeHtml(value: string) {
   return value
@@ -64,14 +115,206 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;")
 }
 
-function buildHtml(input: ReferralEmailInput) {
+/**
+ * Fills an editable copy string for the HTML build: the copy is escaped, then
+ * each `{token}` is replaced with its (already HTML-ready) value. Tokens
+ * survive escaping because braces and letters are not escaped.
+ */
+function fillHtml(copy: string, vars: Copy) {
+  let out = escapeHtml(copy)
+  for (const key of Object.keys(vars)) out = out.split(`{${key}}`).join(vars[key])
+  return out
+}
+
+/** Fills an editable copy string for the plain-text build (no escaping). */
+function fillText(copy: string, vars: Copy) {
+  let out = copy
+  for (const key of Object.keys(vars)) out = out.split(`{${key}}`).join(vars[key])
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Layout primitives — the locked-in shell, headers, and block styles that copy
+// is poured into. None of this is editable from the admin editor.
+// ---------------------------------------------------------------------------
+
+const BODY_STYLE =
+  "margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;"
+const CARD_STYLE = "max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;"
+const P = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
+const SIGNOFF_STYLE = "margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;"
+
+function htmlShell(header: string, inner: string) {
+  return `<!doctype html>
+<html>
+  <body style="${BODY_STYLE}">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="${CARD_STYLE}">
+      ${header}
+      <tr>
+        <td style="padding:28px;">
+${inner}
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
+
+/** incREDible header, for member-facing mail. */
+function incredibleHeader() {
+  return `<tr>
+        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
+          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">inc<span style="color:#cf2c2c;">RED</span>ible</span>
+          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">The Pride Chamber&#39;s RED Group activity tracker</span>
+        </td>
+      </tr>`
+}
+
+/** Plain "The Pride Chamber" header used by the referred-person introduction. */
+function chamberHeaderPlain() {
+  return `<tr>
+        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
+          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">The Pride Chamber</span>
+        </td>
+      </tr>`
+}
+
+/** The Pride Chamber header with the "RED networking group" subtitle, for guest mail. */
+function chamberHeader() {
+  return `<tr>
+        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
+          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">The Pride Chamber</span>
+          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">RED networking group</span>
+        </td>
+      </tr>`
+}
+
+function syncAlertHeader() {
+  return `<tr>
+        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
+          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">incREDible — sync alert</span>
+        </td>
+      </tr>`
+}
+
+function para(inner: string, style: string = P) {
+  return `          <p style="${style}">${inner}</p>`
+}
+
+function eyebrow(inner: string, color = "#cf2c2c") {
+  return `          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:${color};text-transform:uppercase;letter-spacing:0.06em;">${inner}</p>`
+}
+
+function heading(inner: string) {
+  return `          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">${inner}</h1>`
+}
+
+/** "Tue, Sep 1, 2026" from an ISO date, without pulling in a date library. */
+function formatOccurredOn(iso: string) {
+  const d = new Date(`${iso}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    // Fixed to the chamber's timezone so the date reads the same for every
+    // recipient regardless of where the server runs.
+    timeZone: "America/New_York",
+  })
+}
+
+const CHAMBER_URL = "https://thepridechamber.org"
+
+/**
+ * The three guest emails all describe a meeting. The picker label already reads
+ * "RED Central — Tue, Sep 8, 11:30 AM EDT", so it is shown as a single
+ * "Meeting" line, with the venue on its own "Where" line when known.
+ */
+function meetingBoxHtml(meetingLabel: string, meetingLocation: string | null, e: (s: string) => string) {
+  const row = (label: string, value: string) => `
+    <tr>
+      <td style="padding:8px 0;color:#6d6d68;font-size:14px;width:84px;vertical-align:top;">${e(label)}</td>
+      <td style="padding:8px 0;color:#17171a;font-size:14px;font-weight:600;vertical-align:top;">${e(value)}</td>
+    </tr>`
+  const rows = [row("Meeting", meetingLabel), meetingLocation ? row("Where", meetingLocation) : ""].join("")
+  return `          <div style="background:#fbfbfa;border:1px solid #e6e5e1;border-radius:12px;padding:8px 18px;margin:0 0 20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+          </div>`
+}
+
+function meetingBoxText(meetingLabel: string, meetingLocation: string | null) {
+  return [`Meeting: ${meetingLabel}`, meetingLocation ? `Where:   ${meetingLocation}` : null]
+    .filter((line) => line !== null)
+    .join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Renderers — one per template, each turning (data, resolved copy) into the
+// final subject/html/text. Shared by the live send path and the editor preview.
+// ---------------------------------------------------------------------------
+
+function renderPasswordReset(input: PasswordResetEmailInput, copy: Copy): RenderedEmail {
   const e = escapeHtml
+  const htmlVars: Copy = { recipientFirstName: e(input.recipientFirstName), expiresIn: e(input.expiresIn) }
+  const textVars: Copy = { recipientFirstName: input.recipientFirstName, expiresIn: input.expiresIn }
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    `          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+            <tr>
+              <td style="border-radius:10px;background:#cf2c2c;">
+                <a href="${e(input.resetUrl)}" style="display:inline-block;padding:13px 24px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">${fillHtml(copy.buttonLabel, htmlVars)}</a>
+              </td>
+            </tr>
+          </table>`,
+    para(fillHtml(copy.expiryNote, htmlVars), "margin:0 0 20px;font-size:13px;line-height:1.6;color:#6d6d68;"),
+    `          <div style="border-left:3px solid #e6e5e1;padding:2px 0 2px 14px;">
+            <p style="margin:0;font-size:13px;line-height:1.6;color:#6d6d68;">${fillHtml(copy.securityNote, htmlVars)}</p>
+          </div>`,
+    para(
+      `${fillHtml(copy.fallbackNote, htmlVars)}<br />${e(input.resetUrl)}`,
+      "margin:24px 0 0;font-size:12px;line-height:1.6;color:#6d6d68;word-break:break-all;",
+    ),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    input.resetUrl,
+    ``,
+    fillText(copy.expiryNote, textVars),
+    ``,
+    fillText(copy.securityNote, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
+function renderReferral(input: ReferralEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const companySuffixHtml = input.referrerCompany ? ` of ${e(input.referrerCompany)}` : ""
+  const companySuffixText = input.referrerCompany ? ` of ${input.referrerCompany}` : ""
+  const htmlVars: Copy = {
+    recipientFirstName: e(input.recipientFirstName),
+    referrerName: e(input.referrerName),
+    referrerCompanySuffix: companySuffixHtml,
+    referredName: e(input.referredName),
+  }
+  const textVars: Copy = {
+    recipientFirstName: input.recipientFirstName,
+    referrerName: input.referrerName,
+    referrerCompanySuffix: companySuffixText,
+    referredName: input.referredName,
+  }
+
   const row = (label: string, value: string) => `
     <tr>
       <td style="padding:8px 0;color:#6d6d68;font-size:14px;width:120px;vertical-align:top;">${e(label)}</td>
       <td style="padding:8px 0;color:#17171a;font-size:14px;font-weight:600;vertical-align:top;">${value}</td>
     </tr>`
-
   const contactRows = [
     row("Name", e(input.referredName)),
     input.referredEmail
@@ -83,153 +326,319 @@ function buildHtml(input: ReferralEmailInput) {
     input.referredCompany ? row("Company", e(input.referredCompany)) : "",
   ].join("")
 
-  return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
-          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">inc<span style="color:#cf2c2c;">RED</span>ible</span>
-          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">The Pride Chamber&#39;s RED Group activity tracker</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:28px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">New referral</p>
-          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">
-            ${e(input.referrerName)} has referred a great contact to you
-          </h1>
-          <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#4a4a46;">
-            Hi ${e(input.recipientFirstName)}, this is a referral from your fellow RED member
-            <strong>${e(input.referrerName)}</strong>${input.referrerCompany ? ` of ${e(input.referrerCompany)}` : ""}.
-          </p>
-
-          <div style="background:#fbfbfa;border:1px solid #e6e5e1;border-radius:12px;padding:16px 18px;margin-bottom:20px;">
-            <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#6d6d68;text-transform:uppercase;letter-spacing:0.06em;">Who to contact</p>
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    `          <div style="background:#fbfbfa;border:1px solid #e6e5e1;border-radius:12px;padding:16px 18px;margin-bottom:20px;">
+            <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#6d6d68;text-transform:uppercase;letter-spacing:0.06em;">${fillHtml(copy.contactLabel, htmlVars)}</p>
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${contactRows}</table>
-          </div>
-
-          <div style="border-left:3px solid #cf2c2c;padding:2px 0 2px 14px;">
-            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#6d6d68;text-transform:uppercase;letter-spacing:0.06em;">Why they're being referred</p>
+          </div>`,
+    `          <div style="border-left:3px solid #cf2c2c;padding:2px 0 2px 14px;">
+            <p style="margin:0 0 6px;font-size:12px;font-weight:700;color:#6d6d68;text-transform:uppercase;letter-spacing:0.06em;">${fillHtml(copy.reasonLabel, htmlVars)}</p>
             <p style="margin:0;font-size:15px;line-height:1.6;color:#17171a;white-space:pre-wrap;">${e(input.details)}</p>
-          </div>
+          </div>`,
+    para(fillHtml(copy.footerNote, htmlVars), "margin:24px 0 0;font-size:13px;line-height:1.6;color:#6d6d68;"),
+  ].join("\n")
 
-          <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#6d6d68;">
-            Reach out soon while the introduction is fresh. When closed business results from it, record it in incREDible as a Done Deal.
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-}
-
-function buildText(input: ReferralEmailInput) {
-  return [
-    `NEW REFERRAL — incREDible`,
+  const text = [
+    fillText(copy.intro, textVars),
     ``,
-    `Hi ${input.recipientFirstName},`,
-    ``,
-    `${input.referrerName}${input.referrerCompany ? ` of ${input.referrerCompany}` : ""}, a fellow RED group member, has referred someone to you.`,
-    ``,
-    `WHO TO CONTACT`,
+    fillText(copy.contactLabel, textVars).toUpperCase(),
     `Name:    ${input.referredName}`,
     input.referredEmail ? `Email:   ${input.referredEmail}` : null,
     input.referredPhone ? `Phone:   ${input.referredPhone}` : null,
     input.referredCompany ? `Company: ${input.referredCompany}` : null,
     ``,
-    `WHY THEY'RE BEING REFERRED`,
+    fillText(copy.reasonLabel, textVars).toUpperCase(),
     input.details,
     ``,
-    `Reach out soon while the introduction is fresh. When closed results from it, record it in incREDible as a Done Deal.`,
+    fillText(copy.footerNote, textVars),
   ]
     .filter((line) => line !== null)
     .join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
 }
 
-type PasswordResetEmailInput = {
-  to: string
-  recipientFirstName: string
-  resetUrl: string
-  /** How long the link stays valid, in words, e.g. "1 hour". */
-  expiresIn: string
-}
-
-function buildResetHtml(input: PasswordResetEmailInput) {
+function renderOfflineReferral(input: OfflineReferralEmailInput, copy: Copy): RenderedEmail {
   const e = escapeHtml
+  const occurredOn = formatOccurredOn(input.occurredOn)
+  const htmlVars: Copy = {
+    recipientFirstName: e(input.recipientFirstName),
+    referrerName: e(input.referrerName),
+    referredName: e(input.referredName),
+    occurredOn: e(occurredOn),
+  }
+  const textVars: Copy = {
+    recipientFirstName: input.recipientFirstName,
+    referrerName: input.referrerName,
+    referredName: input.referredName,
+    occurredOn,
+  }
 
-  return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
-          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">inc<span style="color:#cf2c2c;">RED</span>ible</span>
-          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">The Pride Chamber&#39;s RED Group activity tracker</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:28px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">Password reset</p>
-          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">Reset your incREDible password</h1>
-          <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#4a4a46;">
-            Hi ${e(input.recipientFirstName)}, we received a request to reset your password. Click the button below to
-            choose a new one.
-          </p>
-
-          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
-            <tr>
-              <td style="border-radius:10px;background:#cf2c2c;">
-                <a href="${e(input.resetUrl)}" style="display:inline-block;padding:13px 24px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Choose a new password</a>
-              </td>
-            </tr>
-          </table>
-
-          <p style="margin:0 0 20px;font-size:13px;line-height:1.6;color:#6d6d68;">
-            This link expires in ${e(input.expiresIn)} and can only be used once.
-          </p>
-
-          <div style="border-left:3px solid #e6e5e1;padding:2px 0 2px 14px;">
-            <p style="margin:0;font-size:13px;line-height:1.6;color:#6d6d68;">
-              If you didn&#39;t ask for this, you can safely ignore this email — your password will not change until you
-              use the link above.
-            </p>
-          </div>
-
-          <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#6d6d68;word-break:break-all;">
-            If the button doesn&#39;t work, paste this into your browser:<br />${e(input.resetUrl)}
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-}
-
-function buildResetText(input: PasswordResetEmailInput) {
-  return [
-    `RESET YOUR PASSWORD — incREDible`,
-    ``,
-    `Hi ${input.recipientFirstName},`,
-    ``,
-    `We received a request to reset your incREDible password. Open the link below to choose a new one:`,
-    ``,
-    input.resetUrl,
-    ``,
-    `This link expires in ${input.expiresIn} and can only be used once.`,
-    ``,
-    `If you didn't ask for this, you can safely ignore this email — your password will not change until you use the link above.`,
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars), "#6d6d68"),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.body1, htmlVars), "margin:0 0 20px;font-size:15px;line-height:1.6;color:#4a4a46;"),
+    para(fillHtml(copy.body2, htmlVars), "margin:0;font-size:15px;line-height:1.6;color:#4a4a46;"),
   ].join("\n")
+
+  const text = [fillText(copy.body1, textVars), ``, fillText(copy.body2, textVars)].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
 }
+
+function renderVousLogged(input: VousLoggedEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const vousDate = formatOccurredOn(input.vousDate)
+  const logItLinkHtml = `<a href="${e(input.logItUrl)}" style="color:#cf2c2c;font-weight:600;">${fillHtml(copy.linkLabel, {})}</a>`
+  const htmlVars: Copy = {
+    recipientFirstName: e(input.recipientFirstName),
+    loggerName: e(input.loggerName),
+    vousDate: e(vousDate),
+    logItLink: logItLinkHtml,
+  }
+  const textVars: Copy = {
+    recipientFirstName: input.recipientFirstName,
+    loggerName: input.loggerName,
+    vousDate,
+    logItLink: copy.linkLabel,
+  }
+
+  const inner = [
+    para(fillHtml(copy.greeting, htmlVars)),
+    para(fillHtml(copy.body1, htmlVars)),
+    para(fillHtml(copy.body2, htmlVars)),
+    para(fillHtml(copy.ignoreNote, htmlVars)),
+    para(fillHtml(copy.signOff1, htmlVars), SIGNOFF_STYLE),
+    para(fillHtml(copy.signOff2, htmlVars), SIGNOFF_STYLE),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.greeting, textVars),
+    ``,
+    fillText(copy.body1, textVars),
+    ``,
+    fillText(copy.body2, textVars),
+    input.logItUrl,
+    ``,
+    fillText(copy.ignoreNote, textVars),
+    ``,
+    fillText(copy.signOff1, textVars),
+    fillText(copy.signOff2, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
+function renderReferredPerson(input: ReferredPersonEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const recipientWithCompanyHtml = input.recipientCompany
+    ? `${e(input.recipientName)} from ${e(input.recipientCompany)}`
+    : e(input.recipientName)
+  const recipientWithCompanyText = input.recipientCompany
+    ? `${input.recipientName} from ${input.recipientCompany}`
+    : input.recipientName
+  const chamberLinkHtml = `<a href="${CHAMBER_URL}" style="color:#cf2c2c;font-weight:600;">thepridechamber.org</a>`
+  const htmlVars: Copy = {
+    referredName: e(input.referredName),
+    referrerName: e(input.referrerName),
+    recipientName: e(input.recipientName),
+    recipientWithCompany: recipientWithCompanyHtml,
+    referrerSubGroup: e(input.referrerSubGroup),
+    chamberLink: chamberLinkHtml,
+  }
+  const textVars: Copy = {
+    referredName: input.referredName,
+    referrerName: input.referrerName,
+    recipientName: input.recipientName,
+    recipientWithCompany: recipientWithCompanyText,
+    referrerSubGroup: input.referrerSubGroup,
+    chamberLink: CHAMBER_URL,
+  }
+
+  const inner = [
+    para(fillHtml(copy.greeting, htmlVars)),
+    para(fillHtml(copy.body1, htmlVars)),
+    para(fillHtml(copy.body2, htmlVars)),
+    para(fillHtml(copy.body3, htmlVars)),
+    para(`${fillHtml(copy.signOff1, htmlVars)}<br />${fillHtml(copy.signOff2, htmlVars)}`, SIGNOFF_STYLE),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.greeting, textVars),
+    ``,
+    fillText(copy.body1, textVars),
+    ``,
+    fillText(copy.body2, textVars),
+    ``,
+    fillText(copy.body3, textVars),
+    ``,
+    fillText(copy.signOff1, textVars),
+    fillText(copy.signOff2, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(chamberHeaderPlain(), inner), text }
+}
+
+function renderGuestInvite(input: GuestInviteEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const inviterFromHtml = input.inviterCompany
+    ? `${e(input.inviterName)} of ${e(input.inviterCompany)}`
+    : e(input.inviterName)
+  const inviterFromText = input.inviterCompany
+    ? `${input.inviterName} of ${input.inviterCompany}`
+    : input.inviterName
+  const htmlVars: Copy = {
+    guestName: e(input.guestName),
+    inviterName: e(input.inviterName),
+    inviterFrom: inviterFromHtml,
+    subGroup: e(input.subGroup),
+  }
+  const textVars: Copy = {
+    guestName: input.guestName,
+    inviterName: input.inviterName,
+    inviterFrom: inviterFromText,
+    subGroup: input.subGroup,
+  }
+
+  const detailBlockHtml = input.meetingLabel
+    ? meetingBoxHtml(input.meetingLabel, input.meetingLocation, e)
+    : para(fillHtml(copy.noMeetingNote, htmlVars))
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    detailBlockHtml,
+    para(fillHtml(copy.aboutNote, htmlVars)),
+    para(`${fillHtml(copy.signOff1, htmlVars)}<br />${fillHtml(copy.signOff2, htmlVars)}`, SIGNOFF_STYLE),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    input.meetingLabel
+      ? meetingBoxText(input.meetingLabel, input.meetingLocation)
+      : fillText(copy.noMeetingNote, textVars),
+    ``,
+    fillText(copy.aboutNote, textVars),
+    ``,
+    fillText(copy.signOff1, textVars),
+    fillText(copy.signOff2, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(chamberHeader(), inner), text }
+}
+
+function renderGuestRegistered(input: GuestRegisteredGuestEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const htmlVars: Copy = {
+    guestName: e(input.guestName),
+    hostName: e(input.hostName),
+    subGroup: e(input.subGroup),
+  }
+  const textVars: Copy = { guestName: input.guestName, hostName: input.hostName, subGroup: input.subGroup }
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    meetingBoxHtml(input.meetingLabel, input.meetingLocation, e),
+    para(fillHtml(copy.outro, htmlVars)),
+    para(`${fillHtml(copy.signOff1, htmlVars)}<br />${fillHtml(copy.signOff2, htmlVars)}`, SIGNOFF_STYLE),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    meetingBoxText(input.meetingLabel, input.meetingLocation),
+    ``,
+    fillText(copy.outro, textVars),
+    ``,
+    fillText(copy.signOff1, textVars),
+    fillText(copy.signOff2, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(chamberHeader(), inner), text }
+}
+
+function renderGuestRegisteredHost(input: GuestRegisteredHostEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const guestWithCompanyHtml = input.guestCompany
+    ? `${e(input.guestName)} of ${e(input.guestCompany)}`
+    : e(input.guestName)
+  const guestWithCompanyText = input.guestCompany ? `${input.guestName} of ${input.guestCompany}` : input.guestName
+  const htmlVars: Copy = {
+    hostFirstName: e(input.hostFirstName),
+    guestName: e(input.guestName),
+    guestWithCompany: guestWithCompanyHtml,
+  }
+  const textVars: Copy = {
+    hostFirstName: input.hostFirstName,
+    guestName: input.guestName,
+    guestWithCompany: guestWithCompanyText,
+  }
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    meetingBoxHtml(input.meetingLabel, input.meetingLocation, e),
+    para(fillHtml(copy.outro, htmlVars)),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    meetingBoxText(input.meetingLabel, input.meetingLocation),
+    ``,
+    fillText(copy.outro, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
+function renderSyncFailure(input: ScraperFailureEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const htmlVars: Copy = { trigger: e(input.trigger), window: e(input.window) }
+  const textVars: Copy = { trigger: input.trigger, window: input.window }
+
+  const inner = [
+    para(fillHtml(copy.heading, htmlVars)),
+    para(`<strong>Trigger:</strong> ${e(input.trigger)}<br /><strong>Window:</strong> ${e(input.window)}`),
+    `          <p style="margin:0 0 8px;font-size:13px;color:#6d6d68;">Error</p>
+          <pre style="margin:0 0 16px;padding:12px 14px;background:#f7f7f5;border-radius:10px;font-size:13px;line-height:1.5;color:#8a2020;white-space:pre-wrap;word-break:break-word;">${e(input.error)}</pre>`,
+    para(fillHtml(copy.reassurance, htmlVars)),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.heading, textVars),
+    ``,
+    `Trigger: ${input.trigger}`,
+    `Window:  ${input.window}`,
+    ``,
+    `Error:`,
+    input.error,
+    ``,
+    fillText(copy.reassurance, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(syncAlertHeader(), inner), text }
+}
+
+// ---------------------------------------------------------------------------
+// Footer + delivery — unchanged behaviour, applied at the single chokepoint.
+// ---------------------------------------------------------------------------
 
 /**
  * Footer appended to every outgoing email, in both HTML and plain text.
  *
- * Applied centrally in `deliver()` rather than pasted into each template, so
- * any email added later inherits it without anyone remembering to.
- *
  * Wording is the user's verbatim copy — including "(C)" rather than "©" and the
- * curly apostrophes. Don't "tidy" it.
+ * curly apostrophes. Don't "tidy" it. It is deliberately NOT part of the
+ * editable copy blocks: it is legal/no-reply boilerplate that must appear on
+ * every email including any added later.
  */
 const FOOTER_LINES = [
   "This is a real email, but this mailbox doesn\u2019t really exist. Who, me? \u{1F440}",
@@ -238,11 +647,6 @@ const FOOTER_LINES = [
 
 const FOOTER_COPYRIGHT = "&#169; The Pride Chamber X Poolsyde 2026"
 
-/**
- * Sits below the white card on the page background, which is the conventional
- * spot for email small print. Uses a table and inline styles like the rest of
- * the templates, because Outlook ignores much else.
- */
 function htmlFooter() {
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;">
@@ -257,11 +661,6 @@ function htmlFooter() {
     </table>`
 }
 
-/**
- * Injected before `</body>` so the footer lands after the card rather than
- * inside it. Falls back to appending if a future template omits the tag, so a
- * malformed template loses the layout but never the notice itself.
- */
 function withHtmlFooter(html: string) {
   const footer = htmlFooter()
   return html.includes("</body>") ? html.replace("</body>", `${footer}\n  </body>`) : html + footer
@@ -272,35 +671,14 @@ function withTextFooter(text: string) {
 }
 
 /**
- * The one sending identity for the whole app.
- *
- * Deliberately a constant rather than `process.env.REFERRAL_FROM_EMAIL`. That
- * variable was set to an address on `thepridechamber.org`, which is NOT a
- * verified domain in this Resend account, so Resend rejected every send with
- * `403 "The thepridechamber.org domain is not verified"` — silently breaking
- * referral emails since they were built, and password resets on day one.
- * `red.poolsyde.com` is the verified domain, so the sender is pinned here where
- * it is reviewed with the code instead of drifting per environment.
- *
- * A no-reply mailbox by request. Nothing in the app reads replies, so
- * `replyTo` is deliberately never set — a reply bounces rather than vanishing
- * into an unwatched inbox.
- *
- * To move to the chamber's own domain: verify it in Resend (DKIM/SPF), then
- * change this one line.
+ * The one sending identity for the whole app. Pinned to the verified
+ * `red.poolsyde.com` domain — see git history for why this is a constant rather
+ * than `process.env.REFERRAL_FROM_EMAIL`. No-reply by request.
  */
 const FROM_EMAIL = "incREDible <no-reply@red.poolsyde.com>"
 
 type DeliveryResult = { sent: boolean; reason?: "not_configured" | "rejected" | "threw" }
 
-/**
- * Single delivery path for every email the app sends, so a provider problem
- * surfaces identically everywhere instead of each caller inventing its own
- * (and quieter) handling.
- *
- * `label` names the email in logs; `fallbackLog` prints the content when no
- * provider is configured, keeping local development workable.
- */
 async function deliver(
   label: string,
   message: { to: string; subject: string; html: string; text: string },
@@ -318,16 +696,11 @@ async function deliver(
     const { error } = await new Resend(apiKey).emails.send({
       from: FROM_EMAIL,
       ...message,
-      // Footer applied here, at the single chokepoint, so every email carries
-      // the no-reply notice — including any added later.
       html: withHtmlFooter(message.html),
       text: withTextFooter(message.text),
     })
 
     if (error) {
-      // Loud and specific: an unverified sending domain, a suspended key or a
-      // rate limit all land here, and each reads as a normal no-op unless the
-      // provider's own wording is preserved.
       console.error(
         `[v0] EMAIL FAILED — Resend rejected ${label} to ${message.to} (${error.name}): ${error.message}`,
       )
@@ -343,649 +716,234 @@ async function deliver(
   }
 }
 
-/**
- * Sends the password reset link.
- *
- * Delivered through Resend rather than Supabase's built-in mailer: the default
- * Supabase SMTP is rate-limited to a couple of messages an hour project-wide,
- * which cannot serve a 40-member chamber, and it would arrive unbranded.
- */
+// ---------------------------------------------------------------------------
+// Public send API — signatures unchanged. Each resolves editable copy first,
+// then renders and delivers.
+// ---------------------------------------------------------------------------
+
+/** Sends the password reset link. */
 export async function sendPasswordResetEmail(input: PasswordResetEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("password-reset")
+  const { subject, html, text } = renderPasswordReset(input, copy)
   return deliver(
     "password reset",
-    {
-      to: input.to,
-      subject: "Reset your incREDible password",
-      html: buildResetHtml(input),
-      text: buildResetText(input),
-    },
-    // The link is a credential, so it is only ever logged on the
-    // no-provider path.
+    { to: input.to, subject, html, text },
+    // The link is a credential, so it is only ever logged on the no-provider path.
     () => console.log(`[v0] Would email ${input.to} a reset link: ${input.resetUrl}`),
   )
 }
 
-/** "Tue, 1 Sep 2026" from an ISO date, without pulling in a date library. */
-function formatOccurredOn(iso: string) {
-  const d = new Date(`${iso}T12:00:00`)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    // Fixed to the chamber's timezone so the date reads the same for every
-    // recipient regardless of where the server runs.
-    timeZone: "America/New_York",
-  })
+/** Sends the referral notification to the member it was passed to. */
+export async function sendReferralEmail(input: ReferralEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("referral")
+  const { subject, html, text } = renderReferral(input, copy)
+  return deliver(
+    "referral notification",
+    { to: input.to, subject, html, text },
+    () => {
+      console.log(`[v0] Would email ${input.to} | subject: ${subject}`)
+      console.log(text)
+    },
+  )
 }
 
-function buildOfflineHtml(input: OfflineReferralEmailInput) {
-  const e = escapeHtml
-  return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
-          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">inc<span style="color:#cf2c2c;">RED</span>ible</span>
-          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">The Pride Chamber&#39;s RED Group activity tracker</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:28px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#6d6d68;text-transform:uppercase;letter-spacing:0.06em;">Logged for the record</p>
-          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">
-            ${e(input.referrerName)} logged a referral to you
-          </h1>
-          <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#4a4a46;">
-            Hi ${e(input.recipientFirstName)}, no action needed &mdash; this is just a note for your records.
-            <strong>${e(input.referrerName)}</strong> has recorded that they passed you a referral for
-            <strong>${e(input.referredName)}</strong> on ${e(formatOccurredOn(input.occurredOn))}.
-          </p>
-          <p style="margin:0;font-size:15px;line-height:1.6;color:#4a4a46;">
-            Because this one was passed on in person, there are no contact details here &mdash; you should
-            already have them. If business comes of it, record it in incREDible as a Done Deal.
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-}
-
-function buildOfflineText(input: OfflineReferralEmailInput) {
-  return [
-    `REFERRAL LOGGED — incREDible`,
-    ``,
-    `Hi ${input.recipientFirstName},`,
-    ``,
-    `No action needed — this is just a note for your records.`,
-    ``,
-    `${input.referrerName} has recorded that they passed you a referral for ${input.referredName} on ${formatOccurredOn(input.occurredOn)}.`,
-    ``,
-    `Because this one was passed on in person, there are no contact details here — you should already have them.`,
-    ``,
-    `If business comes of it, record it in incREDible as a Done Deal.`,
-  ].join("\n")
-}
-
-/**
- * Confirms an offline referral to the member it was passed to.
- *
- * Deliberately quieter than `sendReferralEmail`: it opens with "no action
- * needed", drops the red accent label, and carries no contact block or call to
- * action, because the recipient has already had the conversation. Treating it
- * like a new referral would send them chasing a lead they already own.
- */
+/** Confirms an offline referral to the member it was passed to. */
 export async function sendOfflineReferralEmail(input: OfflineReferralEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("offline-referral")
+  const { subject, html, text } = renderOfflineReferral(input, copy)
   return deliver(
     "offline referral record",
-    {
-      to: input.to,
-      subject: `Referral logged: ${input.referredName}`,
-      html: buildOfflineHtml(input),
-      text: buildOfflineText(input),
-    },
+    { to: input.to, subject, html, text },
     () => console.log(`[v0] Would email ${input.to} an offline referral record for ${input.referredName}`),
   )
 }
 
-/**
- * Tells a member that someone logged a vous with them, and offers to log the
- * matching one from their side.
- *
- * A vous is inherently mutual but recorded one-sidedly, so only the person who
- * remembered to log it gets the credit. This email is the nudge that closes
- * that gap — hence the prefilled link rather than a generic "open the app".
- */
-type VousLoggedEmailInput = {
-  to: string
-  /** The member being told — the one who was vous'd with. */
-  recipientFirstName: string
-  /** Who logged it. */
-  loggerName: string
-  /** ISO date (yyyy-mm-dd) of the vous itself, not of this email. */
-  vousDate: string
-  /**
-   * Absolute link that opens the vous form prefilled with the logger, so the
-   * recipient only has to confirm. Built by the caller, which is the only place
-   * that knows this deployment's own origin.
-   */
-  logItUrl: string
-}
-
-function buildVousLoggedHtml(input: VousLoggedEmailInput) {
-  const e = escapeHtml
-  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
-  return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
-          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">inc<span style="color:#cf2c2c;">RED</span>ible</span>
-          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">The Pride Chamber&#39;s RED Group activity tracker</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:28px;">
-          <p style="${p}">Hey ${e(input.recipientFirstName)},</p>
-          <p style="${p}">
-            <strong>${e(input.loggerName)}</strong> just logged a vous with you on
-            ${e(formatOccurredOn(input.vousDate))} in incREDible.
-          </p>
-          <p style="${p}">
-            <a href="${e(input.logItUrl)}" style="color:#cf2c2c;font-weight:600;">Tap here</a>
-            to log this vous in your incREDible profile, too.
-          </p>
-          <p style="${p}">Already logged it? Just ignore this email and keep smilin&#39; :-)</p>
-          <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">Ciao for now,</p>
-          <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">Your REDical friends xoxo</p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-}
-
-function buildVousLoggedText(input: VousLoggedEmailInput) {
-  return [
-    `Hey ${input.recipientFirstName},`,
-    ``,
-    `${input.loggerName} just logged a vous with you on ${formatOccurredOn(input.vousDate)} in incREDible.`,
-    ``,
-    `Log this vous in your incREDible profile, too:`,
-    input.logItUrl,
-    ``,
-    `Already logged it? Just ignore this email and keep smilin' :-)`,
-    ``,
-    `Ciao for now,`,
-    `Your REDical friends`,
-  ].join("\n")
-}
-
-/**
- * Sends the "someone logged a vous with you" nudge.
- *
- * The vous is already saved when this runs, so a failure here never blocks the
- * member who logged it — `deliver` logs it loudly instead.
- */
+/** Sends the "someone logged a vous with you" nudge. */
 export async function sendVousLoggedEmail(input: VousLoggedEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("vous-logged")
+  const { subject, html, text } = renderVousLogged(input, copy)
   return deliver(
     "vous logged notification",
-    {
-      to: input.to,
-      subject: `${input.loggerName} logged a vous with you`,
-      html: buildVousLoggedHtml(input),
-      text: buildVousLoggedText(input),
-    },
+    { to: input.to, subject, html, text },
     () => console.log(`[v0] Would email ${input.to} that ${input.loggerName} logged a vous`),
   )
 }
 
-const CHAMBER_URL = "https://thepridechamber.org"
-
-/**
- * "Jane Smith from Acme Ltd" — or just "Jane Smith" when no company is on the
- * profile, so the sentence never reads "... to Jane Smith from null".
- */
-function nameWithCompany(name: string, company: string | null, e: (s: string) => string) {
-  return company ? `${e(name)} from ${e(company)}` : e(name)
-}
-
-function buildReferredPersonHtml(input: ReferredPersonEmailInput) {
-  const e = escapeHtml
-  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
-  return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
-          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">The Pride Chamber</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:28px;">
-          <p style="${p}">Dear ${e(input.referredName)}</p>
-          <p style="${p}">
-            <strong>${e(input.referrerName)}</strong> from The Pride Chamber has recommended an introduction to
-            <strong>${nameWithCompany(input.recipientName, input.recipientCompany, e)}</strong>.
-          </p>
-          <p style="${p}">
-            ${e(input.recipientName)} will soon be in touch to discuss how you may support each other.
-          </p>
-          <p style="${p}">
-            Thanks for your interest in The Pride Chamber. Learn more about us at
-            <a href="${CHAMBER_URL}" style="color:#cf2c2c;font-weight:600;">thepridechamber.org</a>.
-          </p>
-          <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">
-            Kind regards,<br />
-            The team at ${e(input.referrerSubGroup)}
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-}
-
-function buildReferredPersonText(input: ReferredPersonEmailInput) {
-  const who = input.recipientCompany
-    ? `${input.recipientName} from ${input.recipientCompany}`
-    : input.recipientName
-  return [
-    `Dear ${input.referredName}`,
-    ``,
-    `${input.referrerName} from The Pride Chamber has recommended an introduction to ${who}.`,
-    ``,
-    `${input.recipientName} will soon be in touch to discuss how you may support each other.`,
-    ``,
-    `Thanks for your interest in The Pride Chamber. Learn more about us at ${CHAMBER_URL}`,
-    ``,
-    `Kind regards,`,
-    `The team at ${input.referrerSubGroup}`,
-  ].join("\n")
-}
-
-/**
- * Tells the referred person that an introduction is coming.
- *
- * Only ever called when the referrer explicitly opted in on the form — this is
- * an outsider's inbox, so it must never fire from a default.
- */
+/** Tells the referred person that an introduction is coming. */
 export async function sendReferredPersonEmail(input: ReferredPersonEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("referred-person")
+  const { subject, html, text } = renderReferredPerson(input, copy)
   return deliver(
     "referred-person introduction",
-    {
-      to: input.to,
-      subject: `An introduction from The Pride Chamber`,
-      html: buildReferredPersonHtml(input),
-      text: buildReferredPersonText(input),
-    },
+    { to: input.to, subject, html, text },
     () => console.log(`[v0] Would email ${input.to} an introduction notice for ${input.recipientName}`),
   )
 }
 
-/**
- * The three guest emails below all describe a meeting. The picker label already
- * reads "RED Central — Tue, Sep 8, 11:30 AM EDT" (title + date), so it is shown
- * as a single "Meeting" line, with the venue on its own "Where" line when known.
- */
-function meetingBoxHtml(meetingLabel: string, meetingLocation: string | null, e: (s: string) => string) {
-  const row = (label: string, value: string) => `
-    <tr>
-      <td style="padding:8px 0;color:#6d6d68;font-size:14px;width:84px;vertical-align:top;">${e(label)}</td>
-      <td style="padding:8px 0;color:#17171a;font-size:14px;font-weight:600;vertical-align:top;">${e(value)}</td>
-    </tr>`
-  const rows = [row("Meeting", meetingLabel), meetingLocation ? row("Where", meetingLocation) : ""].join("")
-  return `
-    <div style="background:#fbfbfa;border:1px solid #e6e5e1;border-radius:12px;padding:8px 18px;margin:0 0 20px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
-    </div>`
-}
-
-function meetingBoxText(meetingLabel: string, meetingLocation: string | null) {
-  return [`Meeting: ${meetingLabel}`, meetingLocation ? `Where:   ${meetingLocation}` : null]
-    .filter((line) => line !== null)
-    .join("\n")
-}
-
-/** Header block for guest-facing mail, branded The Pride Chamber rather than incREDible. */
-function chamberHeader() {
-  return `
-      <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
-          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">The Pride Chamber</span>
-          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">RED networking group</span>
-        </td>
-      </tr>`
-}
-
-/**
- * Sent to a prospective guest when a member fills in the "invite a guest" form.
- *
- * Goes to an outsider's inbox, so it follows the referred-person email's rules:
- * The Pride Chamber branding rather than the internal incREDible tool, a warm
- * invitation, and no one's contact details. The member may not have picked a
- * meeting yet, in which case it promises the details rather than stating them.
- */
-type GuestInviteEmailInput = {
-  to: string
-  guestName: string
-  inviterName: string
-  inviterCompany: string | null
-  subGroup: string
-  meetingLabel: string | null
-  meetingLocation: string | null
-}
-
-function buildGuestInviteHtml(input: GuestInviteEmailInput) {
-  const e = escapeHtml
-  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
-  const from = input.inviterCompany ? `${e(input.inviterName)} of ${e(input.inviterCompany)}` : e(input.inviterName)
-  const detailBlock = input.meetingLabel
-    ? meetingBoxHtml(input.meetingLabel, input.meetingLocation, e)
-    : `<p style="${p}"><strong>${e(input.inviterName)}</strong> will be in touch with the date and the rest of the details shortly.</p>`
-
-  return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      ${chamberHeader()}
-      <tr>
-        <td style="padding:28px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">You&#39;re invited</p>
-          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">
-            ${e(input.inviterName)} has invited you to a RED meeting
-          </h1>
-          <p style="${p}">
-            Dear ${e(input.guestName)}, ${from} would love for you to come along as their guest to
-            <strong>${e(input.subGroup)}</strong>, part of The Pride Chamber&#39;s RED networking group.
-          </p>
-          ${detailBlock}
-          <p style="${p}">
-            RED is a friendly circle of business owners who meet to support one another and pass real
-            business between them. Come and see what it&#39;s about — there&#39;s no pressure and no cost to visit.
-          </p>
-          <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">
-            Warm regards,<br />
-            The team at ${e(input.subGroup)}
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-}
-
-function buildGuestInviteText(input: GuestInviteEmailInput) {
-  const from = input.inviterCompany ? `${input.inviterName} of ${input.inviterCompany}` : input.inviterName
-  return [
-    `YOU'RE INVITED — The Pride Chamber RED group`,
-    ``,
-    `Dear ${input.guestName},`,
-    ``,
-    `${from} would love for you to come along as their guest to ${input.subGroup}, part of The Pride Chamber's RED networking group.`,
-    ``,
-    input.meetingLabel
-      ? meetingBoxText(input.meetingLabel, input.meetingLocation)
-      : `${input.inviterName} will be in touch with the date and the rest of the details shortly.`,
-    ``,
-    `RED is a friendly circle of business owners who meet to support one another and pass real business between them. Come and see what it's about — there's no pressure and no cost to visit.`,
-    ``,
-    `Warm regards,`,
-    `The team at ${input.subGroup}`,
-  ].join("\n")
-}
-
-/**
- * Tells a prospective guest that their invitation is on its way.
- *
- * Fired the moment a member completes the invite form, so a failure must never
- * block that member — `deliver` logs loudly instead of throwing.
- */
+/** Tells a prospective guest that their invitation is on its way. */
 export async function sendGuestInviteEmail(input: GuestInviteEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("guest-invite")
+  const { subject, html, text } = renderGuestInvite(input, copy)
   return deliver(
     "guest invitation",
-    {
-      to: input.to,
-      subject: `${input.inviterName} invited you to a Pride Chamber RED meeting`,
-      html: buildGuestInviteHtml(input),
-      text: buildGuestInviteText(input),
-    },
+    { to: input.to, subject, html, text },
     () => console.log(`[v0] Would email ${input.to} a guest invitation from ${input.inviterName}`),
   )
 }
 
-/**
- * Confirmation sent to a guest who self-registers by scanning a member's QR
- * code. Guest-facing, so The Pride Chamber branding; the meeting is always
- * known on this path, so it is always shown.
- */
-type GuestRegisteredGuestEmailInput = {
-  to: string
-  guestName: string
-  hostName: string
-  subGroup: string
-  meetingLabel: string
-  meetingLocation: string | null
-}
-
-function buildGuestRegisteredHtml(input: GuestRegisteredGuestEmailInput) {
-  const e = escapeHtml
-  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
-  return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      ${chamberHeader()}
-      <tr>
-        <td style="padding:28px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">You&#39;re registered</p>
-          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">You&#39;re all set, ${e(input.guestName)}</h1>
-          <p style="${p}">
-            Thanks for registering. You&#39;re confirmed as <strong>${e(input.hostName)}</strong>&#39;s guest at:
-          </p>
-          ${meetingBoxHtml(input.meetingLabel, input.meetingLocation, e)}
-          <p style="${p}">
-            We look forward to welcoming you. If anything changes, just let ${e(input.hostName)} know.
-          </p>
-          <p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#4a4a46;">
-            Warm regards,<br />
-            The team at ${e(input.subGroup)}
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-}
-
-function buildGuestRegisteredText(input: GuestRegisteredGuestEmailInput) {
-  return [
-    `YOU'RE REGISTERED — The Pride Chamber RED group`,
-    ``,
-    `You're all set, ${input.guestName}.`,
-    ``,
-    `Thanks for registering. You're confirmed as ${input.hostName}'s guest at:`,
-    ``,
-    meetingBoxText(input.meetingLabel, input.meetingLocation),
-    ``,
-    `We look forward to welcoming you. If anything changes, just let ${input.hostName} know.`,
-    ``,
-    `Warm regards,`,
-    `The team at ${input.subGroup}`,
-  ].join("\n")
-}
-
+/** Confirms a self-registered guest's spot. */
 export async function sendGuestRegisteredEmail(input: GuestRegisteredGuestEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("guest-registered")
+  const { subject, html, text } = renderGuestRegistered(input, copy)
   return deliver(
     "guest registration confirmation",
-    {
-      to: input.to,
-      subject: `You're registered as ${input.hostName}'s guest`,
-      html: buildGuestRegisteredHtml(input),
-      text: buildGuestRegisteredText(input),
-    },
+    { to: input.to, subject, html, text },
     () => console.log(`[v0] Would email ${input.to} a registration confirmation for ${input.hostName}'s guest`),
   )
 }
 
-/**
- * Tells the inviting member that a guest used their QR code and registered.
- *
- * Member-facing, so this one carries the internal incREDible branding, unlike
- * the two guest-facing emails above.
- */
-type GuestRegisteredHostEmailInput = {
-  to: string
-  hostFirstName: string
-  guestName: string
-  guestCompany: string | null
-  meetingLabel: string
-  meetingLocation: string | null
-}
-
-function buildHostNotifiedHtml(input: GuestRegisteredHostEmailInput) {
-  const e = escapeHtml
-  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
-  const who = input.guestCompany ? `${e(input.guestName)} of ${e(input.guestCompany)}` : e(input.guestName)
-  return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
-          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">inc<span style="color:#cf2c2c;">RED</span>ible</span>
-          <span style="display:block;margin-top:3px;font-size:12px;color:#6d6d68;">The Pride Chamber&#39;s RED Group activity tracker</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:28px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:600;color:#cf2c2c;text-transform:uppercase;letter-spacing:0.06em;">Guest registered</p>
-          <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#17171a;">${who} is coming!</h1>
-          <p style="${p}">
-            Hi ${e(input.hostFirstName)}, good news — <strong>${who}</strong> scanned your invite QR code and
-            registered to attend:
-          </p>
-          ${meetingBoxHtml(input.meetingLabel, input.meetingLocation, e)}
-          <p style="${p}">
-            They&#39;ve been added to your guest tally in incREDible. Nice work bringing someone along!
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-}
-
-function buildHostNotifiedText(input: GuestRegisteredHostEmailInput) {
-  const who = input.guestCompany ? `${input.guestName} of ${input.guestCompany}` : input.guestName
-  return [
-    `GUEST REGISTERED — incREDible`,
-    ``,
-    `Hi ${input.hostFirstName},`,
-    ``,
-    `Good news — ${who} scanned your invite QR code and registered to attend:`,
-    ``,
-    meetingBoxText(input.meetingLabel, input.meetingLocation),
-    ``,
-    `They've been added to your guest tally in incREDible. Nice work bringing someone along!`,
-  ].join("\n")
-}
-
+/** Tells the inviting member that a guest registered via their QR code. */
 export async function sendGuestRegisteredHostEmail(input: GuestRegisteredHostEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("guest-registered-host")
+  const { subject, html, text } = renderGuestRegisteredHost(input, copy)
   return deliver(
     "guest-registered host notification",
-    {
-      to: input.to,
-      subject: `${input.guestName} registered as your guest`,
-      html: buildHostNotifiedHtml(input),
-      text: buildHostNotifiedText(input),
-    },
+    { to: input.to, subject, html, text },
     () => console.log(`[v0] Would email ${input.to} that ${input.guestName} registered as their guest`),
-  )
-}
-
-/**
- * Sends the referral notification. The referral itself is already saved by the
- * time this runs, so a failure here never blocks the member — but it is logged
- * loudly by `deliver` rather than passing for normal operation.
- */
-export async function sendReferralEmail(input: ReferralEmailInput): Promise<DeliveryResult> {
-  const subject = `Referral from ${input.referrerName}: ${input.referredName}`
-
-  return deliver(
-    "referral notification",
-    { to: input.to, subject, html: buildHtml(input), text: buildText(input) },
-    () => {
-      console.log(`[v0] Would email ${input.to} | subject: ${subject}`)
-      console.log(buildText(input))
-    },
   )
 }
 
 /** Where a failed Pride Chamber sync is reported, by request. */
 const SCRAPER_ALERT_EMAIL = "den@poolsyde.com"
 
-type ScraperFailureEmailInput = {
-  /** The underlying error message from the scrape attempt. */
-  error: string
-  /** The window that was being fetched, e.g. "2026-08-13 to 2026-09-13". */
-  window: string
-  /** Whether the failure came from the daily cron or an admin's manual run. */
-  trigger: "cron" | "manual"
-}
-
-/**
- * Alerts the maintainer that a Pride Chamber calendar sync failed.
- *
- * The sync itself does not wipe anything on failure — members keep seeing the
- * last successfully imported events — so this is a heads-up, not an outage
- * notice: it says plainly that the existing list is still in use.
- */
+/** Alerts the maintainer that a Pride Chamber calendar sync failed. */
 export async function sendScraperFailureEmail(input: ScraperFailureEmailInput): Promise<DeliveryResult> {
-  const e = escapeHtml
-  const p = "margin:0 0 16px;font-size:15px;line-height:1.6;color:#4a4a46;"
-  const html = `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background:#f2f2f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;">
-      <tr>
-        <td style="padding:24px 28px;border-bottom:1px solid #e6e5e1;">
-          <span style="font-weight:700;font-size:18px;color:#17171a;letter-spacing:-0.02em;">incREDible — sync alert</span>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding:28px;">
-          <p style="${p}">A Pride Chamber calendar sync did not complete.</p>
-          <p style="${p}"><strong>Trigger:</strong> ${e(input.trigger)}<br /><strong>Window:</strong> ${e(input.window)}</p>
-          <p style="margin:0 0 8px;font-size:13px;color:#6d6d68;">Error</p>
-          <pre style="margin:0 0 16px;padding:12px 14px;background:#f7f7f5;border-radius:10px;font-size:13px;line-height:1.5;color:#8a2020;white-space:pre-wrap;word-break:break-word;">${e(input.error)}</pre>
-          <p style="${p}">Members are unaffected: the reporting form is still showing the last successfully imported events. The next scheduled sync will retry automatically.</p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-  const text = [
-    `A Pride Chamber calendar sync did not complete.`,
-    ``,
-    `Trigger: ${input.trigger}`,
-    `Window:  ${input.window}`,
-    ``,
-    `Error:`,
-    input.error,
-    ``,
-    `Members are unaffected: the reporting form is still showing the last`,
-    `successfully imported events. The next scheduled sync will retry automatically.`,
-  ].join("\n")
-
+  const copy = await resolveEmailCopy("sync-failure")
+  const { subject, html, text } = renderSyncFailure(input, copy)
   return deliver(
     "pride chamber sync failure",
-    { to: SCRAPER_ALERT_EMAIL, subject: "Pride Chamber event sync failed", html, text },
+    { to: SCRAPER_ALERT_EMAIL, subject, html, text },
     () => console.log(`[v0] Would alert ${SCRAPER_ALERT_EMAIL} of a Pride Chamber sync failure: ${input.error}`),
   )
+}
+
+// ---------------------------------------------------------------------------
+// Editor preview — renders a template with representative sample data and the
+// footer, so the admin editor shows exactly what recipients would get.
+// ---------------------------------------------------------------------------
+
+export type EmailPreview = { subject: string; html: string; text: string }
+
+const PREVIEW_SAMPLES = {
+  "password-reset": {
+    to: "member@example.com",
+    recipientFirstName: "Jordan",
+    resetUrl: "https://redgroup.app/auth/set-password?token=sample-token",
+    expiresIn: "1 hour",
+  } satisfies PasswordResetEmailInput,
+  referral: {
+    to: "member@example.com",
+    recipientFirstName: "Jordan",
+    referrerName: "Jamie Rivera",
+    referrerCompany: "Rivera Design",
+    referredName: "Alex Chen",
+    referredEmail: "alex@chenco.com",
+    referredPhone: "(555) 123-4567",
+    referredCompany: "Chen Co",
+    details: "Alex is opening a second location and needs a full fit-out — a great match for your joinery work.",
+  } satisfies ReferralEmailInput,
+  "offline-referral": {
+    to: "member@example.com",
+    recipientFirstName: "Jordan",
+    referrerName: "Jamie Rivera",
+    referredName: "Alex Chen",
+    occurredOn: "2026-09-01",
+  } satisfies OfflineReferralEmailInput,
+  "vous-logged": {
+    to: "member@example.com",
+    recipientFirstName: "Jordan",
+    loggerName: "Jamie Rivera",
+    vousDate: "2026-09-01",
+    logItUrl: "https://redgroup.app/report/vous?with=sample",
+  } satisfies VousLoggedEmailInput,
+  "referred-person": {
+    to: "prospect@example.com",
+    referredName: "Alex Chen",
+    referrerName: "Jamie Rivera",
+    referrerSubGroup: "RED Central",
+    recipientName: "Sam Taylor",
+    recipientCompany: "Taylor Co",
+  } satisfies ReferredPersonEmailInput,
+  "guest-invite": {
+    to: "prospect@example.com",
+    guestName: "Alex Chen",
+    inviterName: "Jamie Rivera",
+    inviterCompany: "Rivera Design",
+    subGroup: "RED Central",
+    meetingLabel: "RED Central — Tue, Sep 8, 11:30 AM EDT",
+    meetingLocation: "The Ivy, 1 High Street",
+  } satisfies GuestInviteEmailInput,
+  "guest-registered": {
+    to: "prospect@example.com",
+    guestName: "Alex Chen",
+    hostName: "Jamie Rivera",
+    subGroup: "RED Central",
+    meetingLabel: "RED Central — Tue, Sep 8, 11:30 AM EDT",
+    meetingLocation: "The Ivy, 1 High Street",
+  } satisfies GuestRegisteredGuestEmailInput,
+  "guest-registered-host": {
+    to: "member@example.com",
+    hostFirstName: "Jordan",
+    guestName: "Alex Chen",
+    guestCompany: "Chen Co",
+    meetingLabel: "RED Central — Tue, Sep 8, 11:30 AM EDT",
+    meetingLocation: "The Ivy, 1 High Street",
+  } satisfies GuestRegisteredHostEmailInput,
+  "sync-failure": {
+    error: "TimeoutError: navigation exceeded 30000ms while loading the calendar",
+    window: "2026-08-13 to 2026-09-13",
+    trigger: "cron",
+  } satisfies ScraperFailureEmailInput,
+} as const
+
+/**
+ * Renders a template with sample data and the given (unsaved) copy overrides,
+ * for the admin editor's live preview. Uses the exact same renderers and footer
+ * as the real send path, so what a super-admin sees is what recipients get.
+ */
+export function renderEmailPreview(id: string, overrides?: Record<string, string> | null): EmailPreview {
+  const copy = mergeCopy(id, overrides)
+  let rendered: RenderedEmail
+  switch (id) {
+    case "password-reset":
+      rendered = renderPasswordReset(PREVIEW_SAMPLES["password-reset"], copy)
+      break
+    case "referral":
+      rendered = renderReferral(PREVIEW_SAMPLES.referral, copy)
+      break
+    case "offline-referral":
+      rendered = renderOfflineReferral(PREVIEW_SAMPLES["offline-referral"], copy)
+      break
+    case "vous-logged":
+      rendered = renderVousLogged(PREVIEW_SAMPLES["vous-logged"], copy)
+      break
+    case "referred-person":
+      rendered = renderReferredPerson(PREVIEW_SAMPLES["referred-person"], copy)
+      break
+    case "guest-invite":
+      rendered = renderGuestInvite(PREVIEW_SAMPLES["guest-invite"], copy)
+      break
+    case "guest-registered":
+      rendered = renderGuestRegistered(PREVIEW_SAMPLES["guest-registered"], copy)
+      break
+    case "guest-registered-host":
+      rendered = renderGuestRegisteredHost(PREVIEW_SAMPLES["guest-registered-host"], copy)
+      break
+    case "sync-failure":
+      rendered = renderSyncFailure(PREVIEW_SAMPLES["sync-failure"], copy)
+      break
+    default:
+      throw new Error(`Unknown email template: ${id}`)
+  }
+  return { subject: rendered.subject, html: withHtmlFooter(rendered.html), text: withTextFooter(rendered.text) }
 }

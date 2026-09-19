@@ -35,6 +35,7 @@ export default async function AdminPage() {
         guestInvites={guestInvites}
         scopeLabel={scopeLabel}
         canFilterSubGroup={me.role === "super-admin"}
+        canManageEmailTemplates={me.role === "super-admin"}
       />
     </AppShell>
   )
