@@ -210,6 +210,10 @@ export function isAdmin(role: Role) {
   return role === "admin" || role === "super-admin"
 }
 
+export function isSuperAdmin(role: Role) {
+  return role === "super-admin"
+}
+
 export function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",

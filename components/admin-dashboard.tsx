@@ -21,7 +21,7 @@ import {
   resolveSubGroups,
 } from "@/lib/types"
 import { filterActivityRows } from "@/lib/report-filters"
-import { CalendarCog, ChevronRight, Download, SlidersHorizontal, UserPlus } from "lucide-react"
+import { CalendarCog, ChevronRight, Download, Mail, SlidersHorizontal, UserPlus } from "lucide-react"
 
 /** Reads the download filename the export route sets in Content-Disposition. */
 function filenameFromDisposition(disposition: string | null): string | null {
@@ -42,6 +42,7 @@ export function AdminDashboard({
   guestInvites,
   scopeLabel,
   canFilterSubGroup,
+  canManageEmailTemplates,
 }: {
   rows: ActivityRow[]
   members: MemberOption[]
@@ -49,6 +50,8 @@ export function AdminDashboard({
   scopeLabel: string
   /** Super-admins only: they are the only role that sees more than one group. */
   canFilterSubGroup: boolean
+  /** Super-admins only: editing the wording of the app's emails. */
+  canManageEmailTemplates: boolean
 }) {
   const [member, setMember] = useState("all")
   const [type, setType] = useState("all")
@@ -431,6 +434,27 @@ export function AdminDashboard({
           trigger a manual sync.
         </p>
       </section>
+
+      {canManageEmailTemplates ? (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Email templates</h2>
+            <Button
+              render={<Link href="/admin/email-templates" />}
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              className="h-9"
+            >
+              <Mail className="size-4" aria-hidden />
+              Edit templates
+            </Button>
+          </div>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Reword any of the emails the app sends to members and guests, with a live preview before saving.
+          </p>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
