@@ -5,6 +5,7 @@ import { AppShell } from "@/components/app-shell"
 import { UpcomingMeetings } from "@/components/upcoming-meetings"
 import { BrandMark } from "@/components/brand-mark"
 import { MemberSearch } from "@/components/member-search"
+import { VousDashboard } from "@/components/vous/vous-dashboard"
 import { getCurrentMember, getSearchableMembers } from "@/lib/data"
 import { formatSubGroups, isAdmin } from "@/lib/types"
 import { BadgeDollarSign, CalendarDays, Heart, UserPlus } from "lucide-react"
@@ -37,6 +38,8 @@ export default async function HomePage() {
       <div className="mt-6">
         <MemberSearch members={members} />
       </div>
+
+      <VousDashboard memberId={me.id} />
 
       <div className="mt-8 flex flex-col gap-3">
         <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">OR LOG DIRECTLY...</h2>

@@ -436,6 +436,25 @@ export async function getUpcomingMeetings(limit = 20): Promise<Meeting[]> {
   return collect(events, { from: new Date(), to: null, perSeries: limit + 8 }).slice(0, limit)
 }
 
+/**
+ * The exact UTC instant of a wall-clock `date` + `time` in the chamber's
+ * timezone. Used by the Vous scheduler to turn a confirmed "Wed 2:30 PM" into
+ * the correct instant for a calendar event, DST included. Returns null on a
+ * malformed date or time.
+ */
+export function nyWallToUtc(date: string, time: string): Date | null {
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  const tm = /^(\d{1,2}):(\d{2})$/.exec(time)
+  if (!dm || !tm) return null
+  const hour = Number(tm[1])
+  const minute = Number(tm[2])
+  if (hour > 23 || minute > 59) return null
+  return wallTimeToUtc(
+    { year: +dm[1], month: +dm[2], day: +dm[3], hour, minute },
+    CALENDAR_TIME_ZONE,
+  )
+}
+
 /** Parses a `YYYY-MM-DD` string to the UTC instant of a wall-clock time in `timeZone`. */
 function isoDateToInstant(
   dateStr: string,

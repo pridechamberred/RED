@@ -5,7 +5,7 @@ import { FormHeader } from "@/components/form-header"
 import { MemberAvatar } from "@/components/member-avatar"
 import { getCurrentMember, getMemberById } from "@/lib/data"
 import { formatSubGroups, isAdmin, memberName } from "@/lib/types"
-import { ChevronRight, Handshake, Gift } from "lucide-react"
+import { CalendarPlus, ChevronRight, Handshake, Gift } from "lucide-react"
 
 const ACTIONS = [
   {
@@ -49,7 +49,26 @@ export default async function MemberActionPage({ params }: { params: Promise<{ i
         </span>
       </div>
 
-      <ul className="mt-4 flex flex-col gap-3">
+      <Link
+        href={`/vous/new?member=${member.id}`}
+        className="mt-4 flex items-center gap-4 rounded-2xl border border-primary/40 bg-primary/5 px-5 py-5 transition-colors hover:border-primary/70 hover:bg-primary/10"
+      >
+        <span
+          aria-hidden
+          className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"
+        >
+          <CalendarPlus className="size-5" />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-lg font-semibold leading-tight">🤝 Request a Vous</span>
+          <span className="text-sm leading-relaxed text-muted-foreground">
+            {`Find a time to meet ${member.first_name}`}
+          </span>
+        </span>
+        <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+      </Link>
+
+      <ul className="mt-3 flex flex-col gap-3">
         {ACTIONS.map((action) => (
           <li key={action.slug}>
             <Link

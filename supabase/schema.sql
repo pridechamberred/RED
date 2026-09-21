@@ -544,6 +544,70 @@ create policy guest_invitations_delete_own on public.guest_invitations
   for delete to authenticated using (inviter_user_id = public.current_member_id());
 
 -- ---------------------------------------------------------------------------
+-- 5b. VOUS SCHEDULER (migration 017)
+-- ---------------------------------------------------------------------------
+-- The lightweight negotiation behind arranging a 1:1: proposed windows/places,
+-- a confirmed slot, and nothing resembling a chat. Strictly the two
+-- participants can see a row — no admin visibility, availability is private.
+
+create table if not exists public.vous_requests (
+  id                       uuid primary key default gen_random_uuid(),
+  inviter_id               uuid not null references public.members(id) on delete cascade,
+  invitee_id               uuid not null references public.members(id) on delete cascade,
+  status                   text not null default 'pending'
+                             check (status in ('pending', 'counter_proposed', 'confirmed', 'cancelled', 'expired')),
+  proposed_by              uuid not null references public.members(id) on delete cascade,
+  proposed_windows         jsonb not null default '[]'::jsonb,
+  locations                text[] not null default '{}',
+  location_other           text,
+  message                  text,
+  confirmed_date           date,
+  confirmed_start          text,
+  confirmed_end            text,
+  confirmed_location       text,
+  confirmed_location_other text,
+  confirmed_at             timestamptz,
+  cancelled_at             timestamptz,
+  cancelled_by             uuid references public.members(id) on delete set null,
+  created_at               timestamptz not null default now(),
+  updated_at               timestamptz not null default now(),
+  constraint vous_requests_not_self check (inviter_id <> invitee_id)
+);
+
+create index if not exists vous_requests_invitee_idx on public.vous_requests (invitee_id, status);
+create index if not exists vous_requests_inviter_idx on public.vous_requests (inviter_id, status);
+create index if not exists vous_requests_confirmed_idx
+  on public.vous_requests (confirmed_date)
+  where status = 'confirmed';
+
+alter table public.vous_requests enable row level security;
+
+drop policy if exists vous_requests_select on public.vous_requests;
+create policy vous_requests_select on public.vous_requests
+  for select to authenticated
+  using (inviter_id = public.current_member_id() or invitee_id = public.current_member_id());
+
+drop policy if exists vous_requests_insert on public.vous_requests;
+create policy vous_requests_insert on public.vous_requests
+  for insert to authenticated
+  with check (
+    inviter_id = public.current_member_id()
+    and proposed_by = public.current_member_id()
+    and inviter_id <> invitee_id
+    and exists (select 1 from public.members m where m.id = invitee_id)
+  );
+
+drop policy if exists vous_requests_update on public.vous_requests;
+create policy vous_requests_update on public.vous_requests
+  for update to authenticated
+  using (inviter_id = public.current_member_id() or invitee_id = public.current_member_id())
+  with check (inviter_id = public.current_member_id() or invitee_id = public.current_member_id());
+
+drop policy if exists vous_requests_delete on public.vous_requests;
+create policy vous_requests_delete on public.vous_requests
+  for delete to authenticated using (inviter_id = public.current_member_id());
+
+-- ---------------------------------------------------------------------------
 -- 6. SEED MEMBERS (fictional demo data)
 -- ---------------------------------------------------------------------------
 -- These have no auth account yet. Signing up with one of these email addresses

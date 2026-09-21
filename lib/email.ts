@@ -103,6 +103,45 @@ type ScraperFailureEmailInput = {
   trigger: "cron" | "manual"
 }
 
+type VousRequestEmailInput = {
+  to: string
+  recipientFirstName: string
+  inviterName: string
+  /** The inviter's optional note, or null. */
+  message: string | null
+  /** Deep link to the request (login proxy carries it in `next` if signed out). */
+  viewUrl: string
+}
+
+type VousCounterEmailInput = {
+  to: string
+  recipientFirstName: string
+  /** Who proposed the new times. */
+  counterName: string
+  viewUrl: string
+}
+
+type VousConfirmedEmailInput = {
+  to: string
+  recipientFirstName: string
+  otherName: string
+  /** Preformatted, e.g. "Wednesday, September 23". */
+  dateLabel: string
+  /** Preformatted, e.g. "2:30 PM – 3:30 PM". */
+  timeLabel: string
+  locationLabel: string
+  /** Add-to-calendar link (a Google Calendar template URL). */
+  calendarUrl: string
+}
+
+type VousCancelledEmailInput = {
+  to: string
+  recipientFirstName: string
+  cancellerName: string
+  /** Where "Find another time" points — the other member's profile. */
+  viewUrl: string
+}
+
 type Copy = Record<string, string>
 type RenderedEmail = { subject: string; html: string; text: string }
 
@@ -247,6 +286,33 @@ function meetingBoxText(meetingLabel: string, meetingLocation: string | null) {
   return [`Meeting: ${meetingLabel}`, meetingLocation ? `Where:   ${meetingLocation}` : null]
     .filter((line) => line !== null)
     .join("\n")
+}
+
+/** The red pill button several emails share. `label` is already HTML-ready. */
+function ctaButton(url: string, label: string, e: (s: string) => string) {
+  return `          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:4px 0 24px;">
+            <tr>
+              <td style="border-radius:10px;background:#cf2c2c;">
+                <a href="${e(url)}" style="display:inline-block;padding:13px 24px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">${label}</a>
+              </td>
+            </tr>
+          </table>`
+}
+
+/** A label/value details card (used by the confirmed-vous email). Values are escaped here. */
+function detailsBoxHtml(rows: { label: string; value: string }[], e: (s: string) => string) {
+  const body = rows
+    .map(
+      (r) => `
+    <tr>
+      <td style="padding:8px 0;color:#6d6d68;font-size:14px;width:84px;vertical-align:top;">${e(r.label)}</td>
+      <td style="padding:8px 0;color:#17171a;font-size:14px;font-weight:600;vertical-align:top;">${e(r.value)}</td>
+    </tr>`,
+    )
+    .join("")
+  return `          <div style="background:#fbfbfa;border:1px solid #e6e5e1;border-radius:12px;padding:8px 18px;margin:0 0 20px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${body}</table>
+          </div>`
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +493,125 @@ function renderVousLogged(input: VousLoggedEmailInput, copy: Copy): RenderedEmai
     ``,
     fillText(copy.signOff1, textVars),
     fillText(copy.signOff2, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
+function renderVousRequest(input: VousRequestEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const htmlVars: Copy = { recipientFirstName: e(input.recipientFirstName), inviterName: e(input.inviterName) }
+  const textVars: Copy = { recipientFirstName: input.recipientFirstName, inviterName: input.inviterName }
+
+  const noteBlock = input.message
+    ? `          <div style="border-left:3px solid #cf2c2c;padding:2px 0 2px 14px;margin:0 0 20px;">
+            <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#6d6d68;text-transform:uppercase;letter-spacing:0.06em;">${fillHtml(copy.messageLabel, htmlVars)}</p>
+            <p style="margin:0;font-size:15px;line-height:1.6;color:#17171a;white-space:pre-wrap;">${e(input.message)}</p>
+          </div>`
+    : ""
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    noteBlock,
+    ctaButton(input.viewUrl, fillHtml(copy.buttonLabel, htmlVars), e),
+    para(fillHtml(copy.footerNote, htmlVars), "margin:0;font-size:13px;line-height:1.6;color:#6d6d68;"),
+  ]
+    .filter((block) => block !== "")
+    .join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    input.message ? `${fillText(copy.messageLabel, textVars).toUpperCase()}\n${input.message}` : null,
+    input.message ? `` : null,
+    `${fillText(copy.buttonLabel, textVars)}:`,
+    input.viewUrl,
+    ``,
+    fillText(copy.footerNote, textVars),
+  ]
+    .filter((line) => line !== null)
+    .join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
+function renderVousCounter(input: VousCounterEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const htmlVars: Copy = { recipientFirstName: e(input.recipientFirstName), counterName: e(input.counterName) }
+  const textVars: Copy = { recipientFirstName: input.recipientFirstName, counterName: input.counterName }
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    ctaButton(input.viewUrl, fillHtml(copy.buttonLabel, htmlVars), e),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    `${fillText(copy.buttonLabel, textVars)}:`,
+    input.viewUrl,
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
+function renderVousConfirmed(input: VousConfirmedEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const htmlVars: Copy = { recipientFirstName: e(input.recipientFirstName), otherName: e(input.otherName) }
+  const textVars: Copy = { recipientFirstName: input.recipientFirstName, otherName: input.otherName }
+
+  const rows = [
+    { label: "When", value: input.dateLabel },
+    { label: "Time", value: input.timeLabel },
+    { label: "Where", value: input.locationLabel },
+  ]
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    detailsBoxHtml(rows, e),
+    ctaButton(input.calendarUrl, fillHtml(copy.buttonLabel, htmlVars), e),
+    para(fillHtml(copy.footerNote, htmlVars), "margin:0;font-size:13px;line-height:1.6;color:#6d6d68;"),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    `When:  ${input.dateLabel}`,
+    `Time:  ${input.timeLabel}`,
+    `Where: ${input.locationLabel}`,
+    ``,
+    `${fillText(copy.buttonLabel, textVars)}:`,
+    input.calendarUrl,
+    ``,
+    fillText(copy.footerNote, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
+function renderVousCancelled(input: VousCancelledEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const htmlVars: Copy = { recipientFirstName: e(input.recipientFirstName), cancellerName: e(input.cancellerName) }
+  const textVars: Copy = { recipientFirstName: input.recipientFirstName, cancellerName: input.cancellerName }
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars), "#6d6d68"),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    ctaButton(input.viewUrl, fillHtml(copy.buttonLabel, htmlVars), e),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    `${fillText(copy.buttonLabel, textVars)}:`,
+    input.viewUrl,
   ].join("\n")
 
   return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
@@ -769,6 +954,50 @@ export async function sendVousLoggedEmail(input: VousLoggedEmailInput): Promise<
   )
 }
 
+/** Invites a member to a vous someone proposed from their profile. */
+export async function sendVousRequestEmail(input: VousRequestEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("vous-request")
+  const { subject, html, text } = renderVousRequest(input, copy)
+  return deliver(
+    "vous request",
+    { to: input.to, subject, html, text },
+    () => console.log(`[v0] Would email ${input.to} a vous request from ${input.inviterName}`),
+  )
+}
+
+/** Tells the original requester the other member proposed new times. */
+export async function sendVousCounterEmail(input: VousCounterEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("vous-counter")
+  const { subject, html, text } = renderVousCounter(input, copy)
+  return deliver(
+    "vous counter-proposal",
+    { to: input.to, subject, html, text },
+    () => console.log(`[v0] Would email ${input.to} that ${input.counterName} suggested another time`),
+  )
+}
+
+/** Confirms an agreed vous to one of its members, with the add-to-calendar link. */
+export async function sendVousConfirmedEmail(input: VousConfirmedEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("vous-confirmed")
+  const { subject, html, text } = renderVousConfirmed(input, copy)
+  return deliver(
+    "vous confirmed",
+    { to: input.to, subject, html, text },
+    () => console.log(`[v0] Would email ${input.to} that their vous with ${input.otherName} is booked`),
+  )
+}
+
+/** Notifies the other member that a vous was cancelled. */
+export async function sendVousCancelledEmail(input: VousCancelledEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("vous-cancelled")
+  const { subject, html, text } = renderVousCancelled(input, copy)
+  return deliver(
+    "vous cancelled",
+    { to: input.to, subject, html, text },
+    () => console.log(`[v0] Would email ${input.to} that ${input.cancellerName} cancelled a vous`),
+  )
+}
+
 /** Tells the referred person that an introduction is coming. */
 export async function sendReferredPersonEmail(input: ReferredPersonEmailInput): Promise<DeliveryResult> {
   const copy = await resolveEmailCopy("referred-person")
@@ -866,6 +1095,34 @@ const PREVIEW_SAMPLES = {
     vousDate: "2026-09-01",
     logItUrl: "https://redgroup.app/report/vous?with=sample",
   } satisfies VousLoggedEmailInput,
+  "vous-request": {
+    to: "member@example.com",
+    recipientFirstName: "Jordan",
+    inviterName: "Jamie Rivera",
+    message: "I'd love to catch up about your business.",
+    viewUrl: "https://redgroup.app/vous/sample",
+  } satisfies VousRequestEmailInput,
+  "vous-counter": {
+    to: "member@example.com",
+    recipientFirstName: "Jordan",
+    counterName: "Alex Chen",
+    viewUrl: "https://redgroup.app/vous/sample",
+  } satisfies VousCounterEmailInput,
+  "vous-confirmed": {
+    to: "member@example.com",
+    recipientFirstName: "Jordan",
+    otherName: "Alex Chen",
+    dateLabel: "Wednesday, September 23",
+    timeLabel: "2:30 PM – 3:30 PM",
+    locationLabel: "Foxtail Coffee",
+    calendarUrl: "https://calendar.google.com/calendar/render?action=TEMPLATE",
+  } satisfies VousConfirmedEmailInput,
+  "vous-cancelled": {
+    to: "member@example.com",
+    recipientFirstName: "Jordan",
+    cancellerName: "Jamie Rivera",
+    viewUrl: "https://redgroup.app/member/sample",
+  } satisfies VousCancelledEmailInput,
   "referred-person": {
     to: "prospect@example.com",
     referredName: "Alex Chen",
@@ -926,6 +1183,18 @@ export function renderEmailPreview(id: string, overrides?: Record<string, string
       break
     case "vous-logged":
       rendered = renderVousLogged(PREVIEW_SAMPLES["vous-logged"], copy)
+      break
+    case "vous-request":
+      rendered = renderVousRequest(PREVIEW_SAMPLES["vous-request"], copy)
+      break
+    case "vous-counter":
+      rendered = renderVousCounter(PREVIEW_SAMPLES["vous-counter"], copy)
+      break
+    case "vous-confirmed":
+      rendered = renderVousConfirmed(PREVIEW_SAMPLES["vous-confirmed"], copy)
+      break
+    case "vous-cancelled":
+      rendered = renderVousCancelled(PREVIEW_SAMPLES["vous-cancelled"], copy)
       break
     case "referred-person":
       rendered = renderReferredPerson(PREVIEW_SAMPLES["referred-person"], copy)
