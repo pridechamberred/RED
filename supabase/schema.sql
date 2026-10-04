@@ -30,6 +30,13 @@ create table if not exists public.members (
   role         text not null default 'user' check (role in ('user', 'admin', 'super-admin')),
   sub_group    text not null check (sub_group in ('RED Central', 'RED Uptown', 'RED Downtown', 'RED West', 'RED Connect')),
   sub_groups   text[] not null default '{}',
+  -- Social profile URLs (migration 018), normalised to https on the platform's domain.
+  social_facebook  text,
+  social_instagram text,
+  social_linkedin  text,
+  social_tiktok    text,
+  social_x         text,
+  social_bluesky   text,
   created_at   timestamptz not null default now(),
   constraint members_sub_groups_valid check (
     cardinality(sub_groups) >= 1

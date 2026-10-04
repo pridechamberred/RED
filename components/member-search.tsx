@@ -85,7 +85,7 @@ export function MemberSearch({ members }: { members: MemberOption[] }) {
         id="member-search-hint"
         className={`px-1 text-sm leading-relaxed text-muted-foreground ${query.length > 0 ? "sr-only" : ""}`}
       >
-        Start typing a name or business to record a vous or pass a referral.
+        Start typing a name or business to request/record a vous, pass a referral or visit their socials.
       </p>
 
       {results.length > 0 ? (
