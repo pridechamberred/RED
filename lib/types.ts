@@ -47,6 +47,7 @@ export type Member = {
   social_tiktok?: string | null
   social_x?: string | null
   social_bluesky?: string | null
+  social_youtube?: string | null
   created_at: string
 }
 

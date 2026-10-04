@@ -47,6 +47,14 @@ export const SOCIAL_PLATFORMS = [
     profileUrl: (handle: string) => `https://bsky.app/profile/${handle}`,
     placeholder: "yourname.bsky.social",
   },
+  {
+    key: "youtube",
+    column: "social_youtube",
+    label: "YouTube",
+    hosts: ["youtube.com"],
+    profileUrl: (handle: string) => `https://www.youtube.com/@${handle}`,
+    placeholder: "@yourchannel",
+  },
 ] as const
 
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number]
