@@ -40,6 +40,13 @@ export type Member = {
    * this code before running the SQL degrades one panel instead of the app.
    */
   invite_token?: string | null
+  /** Social profile URLs (migration 018). Optional: absent before the migration runs. */
+  social_facebook?: string | null
+  social_instagram?: string | null
+  social_linkedin?: string | null
+  social_tiktok?: string | null
+  social_x?: string | null
+  social_bluesky?: string | null
   created_at: string
 }
 

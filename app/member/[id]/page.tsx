@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
 import { FormHeader } from "@/components/form-header"
 import { MemberAvatar } from "@/components/member-avatar"
+import { MemberSocials } from "@/components/member-socials"
 import { getCurrentMember, getMemberById } from "@/lib/data"
 import { formatSubGroups, isAdmin, memberName } from "@/lib/types"
 import { CalendarPlus, ChevronRight, Handshake, Gift } from "lucide-react"
@@ -37,7 +38,7 @@ export default async function MemberActionPage({ params }: { params: Promise<{ i
 
   return (
     <AppShell showAdmin={isAdmin(me.role)}>
-      <FormHeader title={name} subtitle="What would you like to record?" backHref="/" backLabel="Search" />
+      <FormHeader title={name} subtitle="What would you like to do?" backHref="/" backLabel="Search" />
 
       <div className="mt-5 flex items-center gap-3.5 rounded-2xl border border-border bg-card px-4 py-3.5">
         <MemberAvatar member={member} size="md" />
@@ -90,6 +91,8 @@ export default async function MemberActionPage({ params }: { params: Promise<{ i
           </li>
         ))}
       </ul>
+
+      <MemberSocials member={member} firstName={member.first_name} />
     </AppShell>
   )
 }

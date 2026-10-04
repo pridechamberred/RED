@@ -5,6 +5,8 @@ import { AppShell } from "@/components/app-shell"
 import { PasskeyManager } from "@/components/passkey-manager"
 import { Button } from "@/components/ui/button"
 import { AvatarUpload } from "@/app/profile/avatar-upload"
+import { SocialsForm } from "@/app/profile/socials-form"
+import { SOCIAL_PLATFORMS } from "@/lib/socials"
 import { getCurrentMember } from "@/lib/data"
 import { formatSubGroups, isAdmin, memberName, resolveSubGroups } from "@/lib/types"
 import { KeyRound, LogOut } from "lucide-react"
@@ -44,6 +46,10 @@ export default async function ProfilePage() {
           </div>
         ))}
       </dl>
+
+      <SocialsForm
+        initial={Object.fromEntries(SOCIAL_PLATFORMS.map((p) => [p.key, me[p.column] ?? ""]))}
+      />
 
       <PasskeyManager />
 

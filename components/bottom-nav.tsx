@@ -2,32 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import type { SVGProps } from "react"
 import { CalendarCheck, House, ListChecks, ShieldCheck, UserRound } from "lucide-react"
+import { FacebookIcon } from "@/components/social-icons"
 import { cn } from "@/lib/utils"
 
 // Standard https URL: iOS Universal Links / Android App Links hand it to the
 // Facebook app (straight into the group) when installed, and fall back to the
 // browser otherwise. A custom fb:// scheme would break for users without the app.
 const FACEBOOK_GROUP_URL = "https://www.facebook.com/groups/1707853893729456"
-
-function FacebookIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <circle cx="12" cy="12" r="10" />
-      <path d="M15.5 7.5H14a2.5 2.5 0 0 0-2.5 2.5v11.9" />
-      <path d="M9 13h6" />
-    </svg>
-  )
-}
 
 const ICONS = {
   home: House,
