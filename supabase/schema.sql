@@ -37,6 +37,7 @@ create table if not exists public.members (
   social_tiktok    text,
   social_x         text,
   social_bluesky   text,
+  social_youtube   text,
   created_at   timestamptz not null default now(),
   constraint members_sub_groups_valid check (
     cardinality(sub_groups) >= 1
