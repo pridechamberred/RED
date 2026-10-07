@@ -48,6 +48,10 @@ export type Member = {
   social_x?: string | null
   social_bluesky?: string | null
   social_youtube?: string | null
+  /** Contact details (migration 020). Optional: absent before the migration runs. */
+  phone?: string | null
+  /** Opt-in to show phone + email to other members. Treat absent as false. */
+  share_contact?: boolean | null
   created_at: string
 }
 

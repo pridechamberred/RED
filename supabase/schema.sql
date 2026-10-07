@@ -38,6 +38,9 @@ create table if not exists public.members (
   social_x         text,
   social_bluesky   text,
   social_youtube   text,
+  -- Contact details (migration 020). Only shown to other members when share_contact is true.
+  phone         text check (phone is null or char_length(phone) <= 30),
+  share_contact boolean not null default false,
   created_at   timestamptz not null default now(),
   constraint members_sub_groups_valid check (
     cardinality(sub_groups) >= 1
