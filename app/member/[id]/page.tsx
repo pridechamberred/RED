@@ -6,7 +6,7 @@ import { MemberAvatar } from "@/components/member-avatar"
 import { MemberSocials } from "@/components/member-socials"
 import { getCurrentMember, getMemberById } from "@/lib/data"
 import { formatSubGroups, isAdmin, memberName } from "@/lib/types"
-import { CalendarPlus, ChevronRight, Handshake, Gift } from "lucide-react"
+import { CalendarPlus, ChevronRight, Handshake, Gift, Mail, Phone } from "lucide-react"
 
 const ACTIONS = [
   {
@@ -47,6 +47,26 @@ export default async function MemberActionPage({ params }: { params: Promise<{ i
           <span className="truncate text-sm leading-relaxed text-muted-foreground">
             {member.company ? `${member.company} · ${formatSubGroups(member)}` : formatSubGroups(member)}
           </span>
+          {member.share_contact === true ? (
+            <span className="mt-1.5 flex flex-col gap-1 text-sm">
+              {member.phone ? (
+                <a
+                  href={`tel:${member.phone.replace(/[^\d+]/g, "")}`}
+                  className="flex items-center gap-2 font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  <Phone className="size-4 shrink-0" aria-hidden />
+                  <span className="truncate">{member.phone}</span>
+                </a>
+              ) : null}
+              <a
+                href={`mailto:${member.email}`}
+                className="flex items-center gap-2 font-medium text-primary underline-offset-4 hover:underline"
+              >
+                <Mail className="size-4 shrink-0" aria-hidden />
+                <span className="truncate">{member.email}</span>
+              </a>
+            </span>
+          ) : null}
         </span>
       </div>
 

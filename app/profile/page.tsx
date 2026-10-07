@@ -6,6 +6,7 @@ import { PasskeyManager } from "@/components/passkey-manager"
 import { Button } from "@/components/ui/button"
 import { AvatarUpload } from "@/app/profile/avatar-upload"
 import { SocialsForm } from "@/app/profile/socials-form"
+import { ContactForm } from "@/app/profile/contact-form"
 import { SOCIAL_PLATFORMS } from "@/lib/socials"
 import { getCurrentMember } from "@/lib/data"
 import { formatSubGroups, isAdmin, memberName, resolveSubGroups } from "@/lib/types"
@@ -46,6 +47,8 @@ export default async function ProfilePage() {
           </div>
         ))}
       </dl>
+
+      <ContactForm initialPhone={me.phone ?? ""} initialShare={me.share_contact === true} />
 
       <SocialsForm
         initial={Object.fromEntries(SOCIAL_PLATFORMS.map((p) => [p.key, me[p.column] ?? ""]))}
