@@ -1,7 +1,8 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { sendGuestRegisteredEmail, sendGuestRegisteredHostEmail } from "@/lib/email"
+import { sendGuestRegisteredEmail, sendGuestRegisteredHostEmail, sendGuestRequestAdminEmail } from "@/lib/email"
+import { getPublicOrigin } from "@/lib/site-url"
 import { getInviteHost, isValidInviteToken } from "@/lib/invite-link"
 import { GUEST_MEETING_LIMIT, getMeetingOptions, type MeetingOption } from "@/lib/meeting-options"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -155,6 +156,42 @@ export async function registerGuest(form: FormData): Promise<GuestRegisterResult
   } else {
     console.log(`[v0] registerGuest: no email on host ${host.id}, inviter notification not sent.`)
   }
+
+  // Every admin and super-admin who belongs to the meeting's sub-group gets an
+  // approval nudge. Two lookups are unioned: `sub_groups` (migration 015) for
+  // multi-group members, and the primary `sub_group` so a pre-015 database or a
+  // member whose array was never backfilled is still reached. The array query
+  // simply errors (and is ignored) when the column does not exist.
+  const ADMIN_ROLES = ["admin", "super-admin"]
+  const [byPrimary, byArray] = await Promise.all([
+    supabase.from("members").select("id, first_name, email").in("role", ADMIN_ROLES).eq("sub_group", subGroup),
+    supabase.from("members").select("id, first_name, email").in("role", ADMIN_ROLES).contains("sub_groups", [subGroup]),
+  ])
+  const admins = new Map<string, { first_name: string | null; email: string }>()
+  for (const row of [...(byPrimary.data ?? []), ...(byArray.data ?? [])]) {
+    if (row.email) admins.set(row.email.toLowerCase(), { first_name: row.first_name, email: row.email })
+  }
+  if (admins.size > 0) {
+    const adminUrl = `${await getPublicOrigin()}/admin`
+    for (const admin of admins.values()) {
+      emails.push(
+        sendGuestRequestAdminEmail({
+          to: admin.email,
+          adminFirstName: admin.first_name || "there",
+          guestName,
+          guestCompany: guestCompany || null,
+          hostName: host_name,
+          subGroup,
+          meetingLabel: meeting.label,
+          meetingLocation: meeting.location,
+          adminUrl,
+        }),
+      )
+    }
+  } else {
+    console.log(`[v0] registerGuest: no admins found for ${subGroup}, guest request alert not sent.`)
+  }
+
   await Promise.allSettled(emails)
 
   return {
