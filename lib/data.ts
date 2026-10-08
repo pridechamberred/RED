@@ -548,6 +548,67 @@ export async function getGuestInvites(): Promise<GuestInviteRow[]> {
   })
 }
 
+export type GuestRequestDecision = "approved" | "denied"
+
+export type GuestRequest = {
+  id: string
+  guestName: string
+  guestEmail: string
+  guestCompany: string | null
+  subGroup: SubGroup
+  meetingTitle: string | null
+  meetingStart: string | null
+  invitedBy: string
+  /** Null while pending — no admin has ruled on it yet. */
+  decision: GuestRequestDecision | null
+}
+
+/**
+ * Self-registered (QR link) guest requests for meetings that haven't happened
+ * yet, soonest first. RLS scopes visibility exactly like `getGuestInvites`.
+ */
+export async function getGuestRequests(): Promise<GuestRequest[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("guest_invitations")
+    .select(
+      "id, guest_name, guest_email, guest_company, sub_group, status, meeting_title, meeting_start, inviter:members!guest_invitations_inviter_user_id_fkey(first_name, last_name)",
+    )
+    .eq("source", "guest_link")
+    .gte("meeting_start", new Date().toISOString())
+    .order("meeting_start", { ascending: true })
+
+  if (error) {
+    console.error("getGuestRequests error:", error.message)
+    return []
+  }
+
+  return ((data ?? []) as unknown[]).map((r) => {
+    const row = r as {
+      id: string
+      guest_name: string
+      guest_email: string
+      guest_company: string | null
+      sub_group: SubGroup
+      status: string
+      meeting_title: string | null
+      meeting_start: string | null
+      inviter: { first_name: string; last_name: string } | null
+    }
+    return {
+      id: row.id,
+      guestName: row.guest_name,
+      guestEmail: row.guest_email,
+      guestCompany: row.guest_company,
+      subGroup: row.sub_group,
+      meetingTitle: row.meeting_title,
+      meetingStart: row.meeting_start,
+      invitedBy: row.inviter ? memberName(row.inviter) : "a member",
+      decision: row.status === "approved" || row.status === "denied" ? row.status : null,
+    }
+  })
+}
+
 /**
  * Eligible imported Pride Chamber events for the attendance dropdown: active,
  * within the previous 31 calendar days (Eastern), newest first.

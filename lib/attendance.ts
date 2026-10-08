@@ -195,6 +195,9 @@ export async function getRegister(meeting: RegisterMeeting): Promise<{
       .from("guest_invitations")
       .select("id, guest_name, guest_email, inviter:members!guest_invitations_inviter_user_id_fkey(first_name, last_name)")
       .eq("meeting_uid", meeting.id)
+      // Member-entered guests always count; self-registered (QR) guests only
+      // once an admin has approved their request (migration 021).
+      .or("source.eq.member,status.eq.approved")
       .order("created_at"),
   ])
 

@@ -256,7 +256,9 @@ create table if not exists public.guest_invitations (
   guest_name      text not null,
   guest_email     text not null,
   sub_group       text not null check (sub_group in ('RED Central', 'RED Uptown', 'RED Downtown', 'RED West', 'RED Connect')),
-  status          text not null default 'pending' check (status in ('pending', 'sent', 'accepted', 'declined')),
+  -- 'approved' / 'denied' (migration 021) are an admin's ruling on a
+  -- guest_link request; only approved requests reach the attendance register.
+  status          text not null default 'pending' check (status in ('pending', 'sent', 'accepted', 'declined', 'approved', 'denied')),
   -- Snapshot of the Google Calendar meeting the guest was invited to, all
   -- nullable because choosing one is optional. Denormalised on purpose: the
   -- calendar is external and an occurrence can be moved or deleted.
