@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
 import { AdminDashboard } from "@/components/admin-dashboard"
-import { getActivityFeed, getAllMembers, getCurrentMember, getGuestInvites } from "@/lib/data"
+import { GuestRequests } from "@/components/guest-requests"
+import { getActivityFeed, getAllMembers, getCurrentMember, getGuestInvites, getGuestRequests } from "@/lib/data"
 import { isAdmin, resolveSubGroups, subGroupsOverlap } from "@/lib/types"
 
 export default async function AdminPage() {
@@ -10,11 +11,17 @@ export default async function AdminPage() {
   if (!isAdmin(me.role)) redirect("/")
 
   // RLS already scopes these: admins see their own sub-group, super-admins all.
-  const [rows, allMembers, guestInvites] = await Promise.all([
+  const [rows, allMembers, guestInvites, allGuestRequests] = await Promise.all([
     getActivityFeed(),
     getAllMembers(),
     getGuestInvites(),
+    getGuestRequests(),
   ])
+
+  const guestRequests =
+    me.role === "super-admin"
+      ? allGuestRequests
+      : allGuestRequests.filter((r) => resolveSubGroups(me).includes(r.subGroup))
 
   // A sub-group admin sees every member who shares one of their groups, so a
   // member of two groups shows up for both groups' admins.
@@ -37,6 +44,9 @@ export default async function AdminPage() {
         canFilterSubGroup={me.role === "super-admin"}
         canManageEmailTemplates={me.role === "super-admin"}
       />
+      <div className="mt-6">
+        <GuestRequests requests={guestRequests} />
+      </div>
     </AppShell>
   )
 }

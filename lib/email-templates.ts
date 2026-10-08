@@ -447,6 +447,43 @@ export const EMAIL_TEMPLATES: EmailTemplateMeta[] = [
     ],
   },
   {
+    id: "guest-request-admin",
+    name: "New guest request (admin alert)",
+    description:
+      "Sent to every admin and super-admin in the meeting's sub-group when someone submits a guest request, linking to the approval queue on /admin.",
+    audience: "member",
+    sender: "incREDible",
+    fields: [
+      { key: "subject", label: "Subject line", default: `New guest request for RED: {guestName}` },
+      { key: "eyebrow", label: "Eyebrow label", default: `Guest request` },
+      { key: "heading", label: "Heading", default: `{guestWithCompany} would like to attend` },
+      {
+        key: "intro",
+        label: "Intro (meeting details box follows this)",
+        multiline: true,
+        default: `A new guest request has been submitted for RED.`,
+      },
+      {
+        key: "outro",
+        label: "Closing paragraph (button follows this)",
+        multiline: true,
+        default: `They were invited by {hostName} to the {subGroup} meeting.`,
+      },
+      { key: "buttonLabel", label: "Button label", default: `View and approve it here` },
+    ],
+    variables: [
+      { token: "adminFirstName", label: "Admin's first name", sample: "Jordan" },
+      { token: "guestName", label: "Guest's name", sample: "Alex Chen" },
+      {
+        token: "guestWithCompany",
+        label: "Guest with company, e.g. 'Alex Chen of Chen Co'",
+        sample: "Alex Chen of Chen Co",
+      },
+      { token: "hostName", label: "Inviting member's name", sample: "Jamie Rivera" },
+      { token: "subGroup", label: "Sub-group of the meeting", sample: "RED Central" },
+    ],
+  },
+  {
     id: "sync-failure",
     name: "Calendar sync failure alert",
     description: "Internal heads-up to the maintainer when the Pride Chamber calendar sync fails.",

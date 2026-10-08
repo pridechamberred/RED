@@ -94,6 +94,18 @@ type GuestRegisteredHostEmailInput = {
   meetingLocation: string | null
 }
 
+type GuestRequestAdminEmailInput = {
+  to: string
+  adminFirstName: string
+  guestName: string
+  guestCompany: string | null
+  hostName: string
+  subGroup: string
+  meetingLabel: string
+  meetingLocation: string | null
+  adminUrl: string
+}
+
 type ScraperFailureEmailInput = {
   /** The underlying error message from the scrape attempt. */
   error: string
@@ -785,6 +797,46 @@ function renderGuestRegisteredHost(input: GuestRegisteredHostEmailInput, copy: C
   return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
 }
 
+function renderGuestRequestAdmin(input: GuestRequestAdminEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const guestWithCompanyText = input.guestCompany ? `${input.guestName} of ${input.guestCompany}` : input.guestName
+  const htmlVars: Copy = {
+    adminFirstName: e(input.adminFirstName),
+    guestName: e(input.guestName),
+    guestWithCompany: e(guestWithCompanyText),
+    hostName: e(input.hostName),
+    subGroup: e(input.subGroup),
+  }
+  const textVars: Copy = {
+    adminFirstName: input.adminFirstName,
+    guestName: input.guestName,
+    guestWithCompany: guestWithCompanyText,
+    hostName: input.hostName,
+    subGroup: input.subGroup,
+  }
+
+  const inner = [
+    eyebrow(fillHtml(copy.eyebrow, htmlVars)),
+    heading(fillHtml(copy.heading, htmlVars)),
+    para(fillHtml(copy.intro, htmlVars)),
+    meetingBoxHtml(input.meetingLabel, input.meetingLocation, e),
+    para(fillHtml(copy.outro, htmlVars)),
+    ctaButton(input.adminUrl, fillHtml(copy.buttonLabel, htmlVars), e),
+  ].join("\n")
+
+  const text = [
+    fillText(copy.intro, textVars),
+    ``,
+    meetingBoxText(input.meetingLabel, input.meetingLocation),
+    ``,
+    fillText(copy.outro, textVars),
+    ``,
+    `${fillText(copy.buttonLabel, textVars)}: ${input.adminUrl}`,
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
 function renderSyncFailure(input: ScraperFailureEmailInput, copy: Copy): RenderedEmail {
   const e = escapeHtml
   const htmlVars: Copy = { trigger: e(input.trigger), window: e(input.window) }
@@ -1042,6 +1094,17 @@ export async function sendGuestRegisteredHostEmail(input: GuestRegisteredHostEma
   )
 }
 
+/** Tells a sub-group admin that a guest request is waiting for approval. */
+export async function sendGuestRequestAdminEmail(input: GuestRequestAdminEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("guest-request-admin")
+  const { subject, html, text } = renderGuestRequestAdmin(input, copy)
+  return deliver(
+    "guest request admin alert",
+    { to: input.to, subject, html, text },
+    () => console.log(`[v0] Would email admin ${input.to} about ${input.guestName}'s guest request`),
+  )
+}
+
 /** Where a failed Pride Chamber sync is reported, by request. */
 const SCRAPER_ALERT_EMAIL = "den@poolsyde.com"
 
@@ -1156,6 +1219,17 @@ const PREVIEW_SAMPLES = {
     meetingLabel: "RED Central — Tue, Sep 8, 11:30 AM EDT",
     meetingLocation: "The Ivy, 1 High Street",
   } satisfies GuestRegisteredHostEmailInput,
+  "guest-request-admin": {
+    to: "admin@example.com",
+    adminFirstName: "Jordan",
+    guestName: "Alex Chen",
+    guestCompany: "Chen Co",
+    hostName: "Jamie Rivera",
+    subGroup: "RED Central",
+    meetingLabel: "RED Central — Tue, Sep 8, 11:30 AM EDT",
+    meetingLocation: "The Ivy, 1 High Street",
+    adminUrl: "https://redgroup.app/admin",
+  } satisfies GuestRequestAdminEmailInput,
   "sync-failure": {
     error: "TimeoutError: navigation exceeded 30000ms while loading the calendar",
     window: "2026-08-13 to 2026-09-13",
@@ -1207,6 +1281,9 @@ export function renderEmailPreview(id: string, overrides?: Record<string, string
       break
     case "guest-registered-host":
       rendered = renderGuestRegisteredHost(PREVIEW_SAMPLES["guest-registered-host"], copy)
+      break
+    case "guest-request-admin":
+      rendered = renderGuestRequestAdmin(PREVIEW_SAMPLES["guest-request-admin"], copy)
       break
     case "sync-failure":
       rendered = renderSyncFailure(PREVIEW_SAMPLES["sync-failure"], copy)
