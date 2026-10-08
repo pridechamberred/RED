@@ -43,6 +43,7 @@ export function AdminDashboard({
   scopeLabel,
   canFilterSubGroup,
   canManageEmailTemplates,
+  guestRequestsSection,
 }: {
   rows: ActivityRow[]
   members: MemberOption[]
@@ -52,6 +53,8 @@ export function AdminDashboard({
   canFilterSubGroup: boolean
   /** Super-admins only: editing the wording of the app's emails. */
   canManageEmailTemplates: boolean
+  /** Server-rendered Guest Requests list, shown directly above the activity feed. */
+  guestRequestsSection?: React.ReactNode
 }) {
   const [member, setMember] = useState("all")
   const [type, setType] = useState("all")
@@ -407,6 +410,8 @@ export function AdminDashboard({
           </div>
         ))}
       </dl>
+
+      {guestRequestsSection}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">Activity feed</h2>

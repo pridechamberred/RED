@@ -43,10 +43,8 @@ export default async function AdminPage() {
         scopeLabel={scopeLabel}
         canFilterSubGroup={me.role === "super-admin"}
         canManageEmailTemplates={me.role === "super-admin"}
+        guestRequestsSection={<GuestRequests requests={guestRequests} />}
       />
-      <div className="mt-6">
-        <GuestRequests requests={guestRequests} />
-      </div>
     </AppShell>
   )
 }
