@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
-import { PaginatedActivityList } from "@/components/paginated-activity-list"
+import { MyActivityFeed } from "@/components/my-activity-feed"
 import { getActivityFeed, getCurrentMember } from "@/lib/data"
 import { isAdmin } from "@/lib/types"
 
@@ -22,10 +22,7 @@ export default async function MyActivityPage() {
       </header>
 
       <div className="mt-6">
-        <PaginatedActivityList
-          rows={rows}
-          emptyMessage="Nothing recorded yet. Search a member on the home screen to start."
-        />
+        <MyActivityFeed rows={rows} />
       </div>
     </AppShell>
   )
