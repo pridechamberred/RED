@@ -5,18 +5,54 @@
 -- quick succession. All are keyed on the date the activity HAPPENED, not when it
 -- was logged.
 --
--- STEP 1 — run these first. A unique index can't be created while duplicates
--- exist, so any rows returned need tidying (delete the extra copies) before
--- STEP 2.
+-- STEP 1 — see what's duplicated. Run each query on its own; each one lists
+-- the duplicated groups and how many copies exist. Nothing is changed.
 
--- select user_id, member_id, date, count(*) from public.vous
---   group by 1, 2, 3 having count(*) > 1;
--- select user_id, date, count(*) from public.volunteering
---   group by 1, 2 having count(*) > 1;
--- select user_id, date, lower(event_name), count(*) from public.chamber_events
---   group by 1, 2, 3 having count(*) > 1;
--- select referrer_user_id, recipient_member_id, lower(referred_name), occurred_on, count(*)
---   from public.referrals group by 1, 2, 3, 4 having count(*) > 1;
+select user_id, member_id, date, count(*) from public.vous
+  group by 1, 2, 3 having count(*) > 1;
+select user_id, date, count(*) from public.volunteering
+  group by 1, 2 having count(*) > 1;
+select user_id, date, lower(event_name), count(*) from public.chamber_events
+  group by 1, 2, 3 having count(*) > 1;
+select referrer_user_id, recipient_member_id, lower(referred_name), occurred_on, count(*)
+  from public.referrals group by 1, 2, 3, 4 having count(*) > 1;
+
+-- STEP 1b — remove the extra copies. Keeps the EARLIEST-logged row in every
+-- duplicated group and deletes the rest. Nothing references these rows, so no
+-- other data is affected.
+
+delete from public.vous where id in (
+  select id from (
+    select id, row_number() over (
+      partition by user_id, member_id, date order by created_at, id
+    ) as n from public.vous
+  ) ranked where n > 1
+);
+
+delete from public.volunteering where id in (
+  select id from (
+    select id, row_number() over (
+      partition by user_id, date order by created_at, id
+    ) as n from public.volunteering
+  ) ranked where n > 1
+);
+
+delete from public.chamber_events where id in (
+  select id from (
+    select id, row_number() over (
+      partition by user_id, date, lower(event_name) order by created_at, id
+    ) as n from public.chamber_events
+  ) ranked where n > 1
+);
+
+delete from public.referrals where id in (
+  select id from (
+    select id, row_number() over (
+      partition by referrer_user_id, recipient_member_id, lower(referred_name), occurred_on
+      order by created_at, id
+    ) as n from public.referrals
+  ) ranked where n > 1
+);
 
 -- STEP 2
 
