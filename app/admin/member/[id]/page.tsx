@@ -5,6 +5,7 @@ import { FormHeader } from "@/components/form-header"
 import { getActivityFeed, getCurrentMember, getMemberById, getReferralsReceivedCount } from "@/lib/data"
 import { formatMoney, formatSubGroups, isAdmin, memberName, resolveSubGroups, subGroupsOverlap } from "@/lib/types"
 import { MemberSubGroupsEditor } from "@/components/member-sub-groups-editor"
+import { MemberRoleEditor } from "@/components/member-role-editor"
 
 export default async function AdminMemberPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -71,6 +72,10 @@ export default async function AdminMemberPage({ params }: { params: Promise<{ id
           memberName={memberName(member)}
           subGroups={resolveSubGroups(member)}
         />
+      ) : null}
+
+      {me.role === "super-admin" && member.id !== me.id && member.role !== "super-admin" ? (
+        <MemberRoleEditor memberId={member.id} memberName={memberName(member)} role={member.role} />
       ) : null}
 
       <dl className="mt-6 grid grid-cols-2 gap-2.5 sm:grid-cols-3">

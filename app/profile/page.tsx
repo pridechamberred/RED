@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { AvatarUpload } from "@/app/profile/avatar-upload"
 import { SocialsForm } from "@/app/profile/socials-form"
 import { ContactForm } from "@/app/profile/contact-form"
+import { DetailsForm } from "@/app/profile/details-form"
 import { SOCIAL_PLATFORMS } from "@/lib/socials"
 import { getCurrentMember } from "@/lib/data"
 import { formatSubGroups, isAdmin, memberName, resolveSubGroups } from "@/lib/types"
@@ -23,8 +24,6 @@ export default async function ProfilePage() {
   if (!me) redirect("/auth/login")
 
   const rows = [
-    { label: "Business", value: me.company || "—" },
-    { label: "Email", value: me.email },
     { label: resolveSubGroups(me).length > 1 ? "Sub-groups" : "Sub-group", value: formatSubGroups(me) },
     { label: "Role", value: ROLE_LABELS[me.role] },
   ]
@@ -47,6 +46,8 @@ export default async function ProfilePage() {
           </div>
         ))}
       </dl>
+
+      <DetailsForm initialCompany={me.company ?? ""} initialEmail={me.email ?? ""} />
 
       <ContactForm initialPhone={me.phone ?? ""} initialShare={me.share_contact === true} />
 

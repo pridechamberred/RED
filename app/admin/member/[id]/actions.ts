@@ -66,3 +66,49 @@ export async function updateMemberSubGroups(
   revalidatePath("/admin")
   return { ok: true, subGroups: chosen }
 }
+
+export type EditableRole = "user" | "admin"
+export type UpdateRoleResult = { ok: true; role: EditableRole } | { ok: false; message: string }
+
+/**
+ * Switches a member between "user" and "admin". Super-admin only. Super-admin
+ * accounts (including the caller's own) are never changed here, so this can't be
+ * used to demote the people who manage roles.
+ */
+export async function updateMemberRole(memberId: string, role: string): Promise<UpdateRoleResult> {
+  const me = await getCurrentMember()
+  if (!me) return { ok: false, message: "Your session has expired. Please sign in again." }
+  if (me.role !== "super-admin") {
+    return { ok: false, message: "Only a super-admin can change a member's role." }
+  }
+  if (role !== "user" && role !== "admin") {
+    return { ok: false, message: "Choose either User or Admin." }
+  }
+  if (memberId === me.id) {
+    return { ok: false, message: "You can't change your own role." }
+  }
+
+  const admin = createAdminClient()
+  const { data: target, error: lookupError } = await admin
+    .from("members")
+    .select("id, role")
+    .eq("id", memberId)
+    .maybeSingle()
+
+  if (lookupError || !target) {
+    return { ok: false, message: "We couldn't find that member." }
+  }
+  if (target.role === "super-admin") {
+    return { ok: false, message: "Super-admin roles can't be changed here." }
+  }
+
+  const { error } = await admin.from("members").update({ role }).eq("id", memberId)
+  if (error) {
+    console.error("updateMemberRole error:", error.message)
+    return { ok: false, message: "We couldn't save that just now. Please try again." }
+  }
+
+  revalidatePath(`/admin/member/${memberId}`)
+  revalidatePath("/admin")
+  return { ok: true, role }
+}
