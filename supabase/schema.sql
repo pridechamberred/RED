@@ -429,6 +429,30 @@ create policy members_update_own on public.members
   using (auth_user_id = auth.uid())
   with check (auth_user_id = auth.uid());
 
+-- Members can edit their own profile fields, but role / email / login link only
+-- change through server actions (service role). See migration 023.
+create or replace function public.members_protect_privileged_columns()
+returns trigger
+language plpgsql
+as $$
+begin
+  if coalesce(auth.role(), '') = 'authenticated' and (
+    new.role is distinct from old.role
+    or new.email is distinct from old.email
+    or new.auth_user_id is distinct from old.auth_user_id
+  ) then
+    raise exception 'Role, email and login changes must go through the app.'
+      using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists members_protect_privileged_columns on public.members;
+create trigger members_protect_privileged_columns
+  before update on public.members
+  for each row execute function public.members_protect_privileged_columns();
+
 -- VOUS
 drop policy if exists vous_select on public.vous;
 create policy vous_select on public.vous
