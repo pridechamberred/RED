@@ -1,14 +1,30 @@
 import { redirect } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
 import { MyActivityFeed } from "@/components/my-activity-feed"
+import { getLastMeetingForGroups } from "@/lib/calendar"
 import { getActivityFeed, getCurrentMember } from "@/lib/data"
-import { isAdmin } from "@/lib/types"
+import { easternTodayISO, formatLongDate } from "@/lib/eastern-date"
+import { isAdmin, resolveSubGroups } from "@/lib/types"
 
 export default async function MyActivityPage() {
   const me = await getCurrentMember()
   if (!me) redirect("/auth/login")
 
-  const rows = await getActivityFeed(me.id)
+  const [rows, lastMeeting] = await Promise.all([
+    getActivityFeed(me.id),
+    getLastMeetingForGroups(resolveSubGroups(me)),
+  ])
+
+  const sinceLastMeeting = lastMeeting
+    ? (() => {
+        const from = easternTodayISO(new Date(lastMeeting.startISO))
+        return {
+          label: `Since the last ${lastMeeting.subGroup} meeting on ${formatLongDate(from)}`,
+          from,
+          to: easternTodayISO(),
+        }
+      })()
+    : null
 
   return (
     <AppShell showAdmin={isAdmin(me.role)}>
@@ -22,7 +38,7 @@ export default async function MyActivityPage() {
       </header>
 
       <div className="mt-6">
-        <MyActivityFeed rows={rows} />
+        <MyActivityFeed rows={rows} defaultRange={sinceLastMeeting} />
       </div>
     </AppShell>
   )
