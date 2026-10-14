@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { AdminMembersList } from "@/components/admin-members-list"
 import { PaginatedActivityList } from "@/components/paginated-activity-list"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -469,30 +470,7 @@ export function AdminDashboard({
             Add a member
           </Button>
         </div>
-        {membersInScope.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-            No member activity yet.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {membersInScope.map((m) => (
-              <li key={m.id}>
-                <Link
-                  href={`/admin/member/${m.id}`}
-                  className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 transition-colors hover:border-primary/40 hover:bg-accent/60"
-                >
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-semibold leading-tight">{memberName(m)}</span>
-                    <span className="truncate text-sm leading-relaxed text-muted-foreground">
-                      {m.company ? `${m.company} · ${formatSubGroups(m)}` : formatSubGroups(m)}
-                    </span>
-                  </span>
-                  <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+        <AdminMembersList members={membersInScope} />
       </section>
     </div>
   )
