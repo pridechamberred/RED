@@ -525,3 +525,21 @@ export async function getRecentMeetings(now: Date = new Date(), days = REGISTER_
   // Newest first: an admin almost always wants the meeting that just happened.
   return collect(events, { from, to, perSeries: 24 }).reverse()
 }
+
+/**
+ * The most recent meeting that has already started for any of `groups`, or
+ * null when none ran in the look-back window (or the feed is unreachable).
+ * Sub-groups meet every two or three weeks, so six weeks is ample.
+ */
+export async function getLastMeetingForGroups(
+  groups: readonly SubGroup[],
+  now: Date = new Date(),
+): Promise<(Meeting & { subGroup: SubGroup }) | null> {
+  const recent = await getRecentMeetings(now, 42)
+  for (const meeting of recent) {
+    if (new Date(meeting.startISO).getTime() > now.getTime()) continue
+    const subGroup = subGroupFromTitle(meeting.title)
+    if (subGroup && groups.includes(subGroup)) return { ...meeting, subGroup }
+  }
+  return null
+}

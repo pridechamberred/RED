@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { SlidersHorizontal, X } from "lucide-react"
+import { SlidersHorizontal, RotateCcw } from "lucide-react"
 import { PaginatedActivityList } from "@/components/paginated-activity-list"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,11 +15,27 @@ const ACTIVITY_TYPES = (Object.keys(ACTIVITY_LABELS) as ActivityType[]).filter(
   (t) => t !== "meeting_attendance",
 )
 
-export function MyActivityFeed({ rows }: { rows: ActivityRow[] }) {
+export type DefaultRange = { label: string; from: string; to: string }
+
+type Period = "last-meeting" | "all" | "custom"
+
+export function MyActivityFeed({
+  rows,
+  defaultRange,
+}: {
+  rows: ActivityRow[]
+  defaultRange: DefaultRange | null
+}) {
+  const initialPeriod: Period = defaultRange ? "last-meeting" : "all"
+
   const [showFilters, setShowFilters] = useState(false)
   const [type, setType] = useState("all")
-  const [from, setFrom] = useState("")
-  const [to, setTo] = useState("")
+  const [period, setPeriod] = useState<Period>(initialPeriod)
+  const [customFrom, setCustomFrom] = useState("")
+  const [customTo, setCustomTo] = useState("")
+
+  const from = period === "last-meeting" && defaultRange ? defaultRange.from : period === "custom" ? customFrom : ""
+  const to = period === "last-meeting" && defaultRange ? defaultRange.to : period === "custom" ? customTo : ""
 
   const filtered = useMemo(
     () => filterActivityRows(rows, { member: "all", subGroup: "all", type, from, to }),
@@ -32,15 +48,38 @@ export function MyActivityFeed({ rows }: { rows: ActivityRow[] }) {
     return counts
   }, [filtered])
 
-  const activeFilters = [type !== "all", from !== "", to !== ""].filter(Boolean).length
+  const isDefaultView = type === "all" && period === initialPeriod
   const visibleTypes = type === "all" ? ACTIVITY_TYPES : [type as ActivityType]
-  const rangeInvalid = from !== "" && to !== "" && from > to
+  const rangeInvalid = period === "custom" && customFrom !== "" && customTo !== "" && customFrom > customTo
 
-  function clearFilters() {
-    setType("all")
-    setFrom("")
-    setTo("")
+  const periodLabel =
+    period === "last-meeting" && defaultRange
+      ? defaultRange.label
+      : period === "custom"
+        ? rangeLabel(customFrom, customTo)
+        : "All time"
+
+  function changePeriod(next: Period) {
+    // Seed a custom range from whatever was showing so it's a tweak, not a restart.
+    if (next === "custom" && period !== "custom") {
+      setCustomFrom(from)
+      setCustomTo(to)
+    }
+    setPeriod(next)
   }
+
+  function resetFilters() {
+    setType("all")
+    setPeriod(initialPeriod)
+    setCustomFrom("")
+    setCustomTo("")
+  }
+
+  const periodOptions: { value: Period; label: string }[] = [
+    ...(defaultRange ? [{ value: "last-meeting" as const, label: defaultRange.label }] : []),
+    { value: "all", label: "All time" },
+    { value: "custom", label: "Custom dates" },
+  ]
 
   return (
     <div className="flex flex-col gap-6">
@@ -58,17 +97,12 @@ export function MyActivityFeed({ rows }: { rows: ActivityRow[] }) {
               <SlidersHorizontal className="size-4" aria-hidden />
               Filter by type and date
             </span>
-            {activeFilters > 0 ? (
-              <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">
-                {activeFilters}
-              </span>
-            ) : null}
           </Button>
 
-          {activeFilters > 0 ? (
-            <Button type="button" variant="ghost" onClick={clearFilters} className="h-11 gap-1.5">
-              <X className="size-4" aria-hidden />
-              Clear
+          {!isDefaultView ? (
+            <Button type="button" variant="ghost" onClick={resetFilters} className="h-11 gap-1.5">
+              <RotateCcw className="size-4" aria-hidden />
+              Reset
             </Button>
           ) : null}
         </div>
@@ -78,6 +112,57 @@ export function MyActivityFeed({ rows }: { rows: ActivityRow[] }) {
             id="my-activity-filters"
             className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4"
           >
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="my-filter-period">Period</Label>
+              <Select value={period} onValueChange={(v) => changePeriod((v as Period) ?? initialPeriod)}>
+                <SelectTrigger id="my-filter-period" className="h-11 w-full">
+                  <SelectValue>
+                    {(v: string | null) => periodOptions.find((o) => o.value === v)?.label ?? "All time"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {periodOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {period === "custom" ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="my-filter-from">From</Label>
+                  <Input
+                    id="my-filter-from"
+                    type="date"
+                    value={customFrom}
+                    max={customTo || undefined}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="h-11"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="my-filter-to">To</Label>
+                  <Input
+                    id="my-filter-to"
+                    type="date"
+                    value={customTo}
+                    min={customFrom || undefined}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="h-11"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {rangeInvalid ? (
+              <p role="alert" className="text-sm text-destructive">
+                The &quot;From&quot; date must be on or before the &quot;To&quot; date.
+              </p>
+            ) : null}
+
             <div className="flex flex-col gap-2">
               <Label htmlFor="my-filter-type">Activity type</Label>
               <Select value={type} onValueChange={(v) => setType(v ?? "all")}>
@@ -98,52 +183,21 @@ export function MyActivityFeed({ rows }: { rows: ActivityRow[] }) {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="my-filter-from">From</Label>
-                <Input
-                  id="my-filter-from"
-                  type="date"
-                  value={from}
-                  max={to || undefined}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="h-11"
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="my-filter-to">To</Label>
-                <Input
-                  id="my-filter-to"
-                  type="date"
-                  value={to}
-                  min={from || undefined}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="h-11"
-                />
-              </div>
-            </div>
-
-            {rangeInvalid ? (
-              <p role="alert" className="text-sm text-destructive">
-                The &quot;From&quot; date must be on or before the &quot;To&quot; date.
-              </p>
-            ) : null}
           </div>
         ) : null}
       </div>
 
       {rows.length > 0 ? (
         <section aria-labelledby="activity-totals-heading" className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex flex-col gap-1">
             <h2
               id="activity-totals-heading"
               className="text-xs font-bold uppercase tracking-wider text-muted-foreground"
             >
               Totals
             </h2>
-            <p className="text-xs text-muted-foreground" aria-live="polite">
-              {rangeLabel(from, to)}
+            <p className="text-sm font-medium text-pretty" aria-live="polite">
+              {periodLabel}
             </p>
           </div>
 
@@ -169,7 +223,9 @@ export function MyActivityFeed({ rows }: { rows: ActivityRow[] }) {
         emptyMessage={
           rows.length === 0
             ? "Nothing recorded yet. Search a member on the home screen to start."
-            : "No activity matches these filters."
+            : period === "last-meeting"
+              ? "Nothing logged since your last meeting yet."
+              : "No activity matches these filters."
         }
       />
     </div>

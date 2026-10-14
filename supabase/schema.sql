@@ -282,6 +282,16 @@ create index if not exists guest_invitations_inviter_idx on public.guest_invitat
 create index if not exists pride_chamber_events_active_idx on public.pride_chamber_events (is_active, event_date desc);
 create index if not exists pride_chamber_sync_runs_ran_at_idx on public.pride_chamber_sync_runs (ran_at desc);
 
+-- Duplicate-activity guards, keyed on the date the activity happened (022).
+create unique index if not exists vous_once_per_day_uidx
+  on public.vous (user_id, member_id, date);
+create unique index if not exists volunteering_once_per_day_uidx
+  on public.volunteering (user_id, date);
+create unique index if not exists chamber_events_once_uidx
+  on public.chamber_events (user_id, date, lower(event_name));
+create unique index if not exists referrals_once_per_day_uidx
+  on public.referrals (referrer_user_id, recipient_member_id, lower(referred_name), occurred_on);
+
 -- ---------------------------------------------------------------------------
 -- 3. HELPER FUNCTIONS (security definer, so policies don't recurse on members)
 -- ---------------------------------------------------------------------------

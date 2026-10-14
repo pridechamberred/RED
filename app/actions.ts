@@ -37,6 +37,23 @@ export type ActionResult = { ok: true; note?: string } | { ok: false; error: str
 
 const GENERIC_ERROR = "We couldn't save that. Please try again."
 
+const DUPLICATE_ERROR =
+  "It looks like you already logged that. Please contact RED Leadership if you believe this to be an error."
+
+/**
+ * Postgres unique violation. The pre-insert checks below catch duplicates in
+ * the normal case; the unique indexes from migration 022 catch the race where
+ * the same form is submitted twice in quick succession.
+ */
+function isUniqueViolation(err: { code?: string } | null): boolean {
+  return err?.code === "23505"
+}
+
+/** Escapes LIKE wildcards so `ilike` acts as a case-insensitive equality. */
+function likeExact(value: string) {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`)
+}
+
 /** Matches the length check on public.done_deal_notes.note. */
 const DEAL_NOTE_MAX = 500
 
@@ -153,6 +170,17 @@ export async function recordVous(form: FormData): Promise<ActionResult> {
   if (!dateWithinRange(date)) return { ok: false, error: "Please choose a valid date, today or earlier." }
 
   const supabase = await createClient()
+
+  // One vous with the same person per day, keyed on the day it happened.
+  const { data: dupe } = await supabase
+    .from("vous")
+    .select("id")
+    .eq("user_id", me.id)
+    .eq("member_id", memberId)
+    .eq("date", date)
+    .limit(1)
+  if (dupe?.length) return { ok: false, error: DUPLICATE_ERROR }
+
   const { error } = await supabase.from("vous").insert({
     user_id: me.id,
     member_id: memberId,
@@ -160,6 +188,7 @@ export async function recordVous(form: FormData): Promise<ActionResult> {
     notes,
   })
 
+  if (isUniqueViolation(error)) return { ok: false, error: DUPLICATE_ERROR }
   if (error) {
     console.log("[v0] recordVous error:", error.message)
     return { ok: false, error: GENERIC_ERROR }
@@ -260,6 +289,17 @@ export async function recordReferral(form: FormData): Promise<ActionResult> {
     return { ok: false, error: "We couldn't find that member. Please try again." }
   }
 
+  // The same person referred to the same member on the same day is a repeat.
+  const { data: dupe } = await supabase
+    .from("referrals")
+    .select("id")
+    .eq("referrer_user_id", me.id)
+    .eq("recipient_member_id", recipientId)
+    .eq("occurred_on", occurredOn)
+    .ilike("referred_name", likeExact(referredName))
+    .limit(1)
+  if (dupe?.length) return { ok: false, error: DUPLICATE_ERROR }
+
   const { error } = await supabase.from("referrals").insert({
     referrer_user_id: me.id,
     recipient_member_id: recipientId,
@@ -273,6 +313,7 @@ export async function recordReferral(form: FormData): Promise<ActionResult> {
     notify_referred: notifyReferred,
   })
 
+  if (isUniqueViolation(error)) return { ok: false, error: DUPLICATE_ERROR }
   if (error) {
     console.log("[v0] recordReferral error:", error.message)
     return { ok: false, error: GENERIC_ERROR }
@@ -373,6 +414,26 @@ export async function recordDoneDeal(form: FormData): Promise<ActionResult> {
   }
 
   const supabase = await createClient()
+
+  // Several genuine deals can close on one day, so only an identical deal —
+  // same day, type, amount and referral source — counts as a repeat.
+  let dupeQuery = supabase
+    .from("done_deals")
+    .select("id")
+    .eq("user_id", me.id)
+    .eq("date", date)
+    .eq("deal_type", dealType)
+    .eq("referral_source", referral.source)
+  dupeQuery =
+    dealType === "one-off"
+      ? dupeQuery.eq("deal_value", dealValue!)
+      : dupeQuery.eq("recurring_value", recurringValue!).eq("recurring_frequency", recurringFrequency!)
+  dupeQuery = referral.memberId
+    ? dupeQuery.eq("referral_from_member_id", referral.memberId)
+    : dupeQuery.is("referral_from_member_id", null)
+  const { data: dupe } = await dupeQuery.limit(1)
+  if (dupe?.length) return { ok: false, error: DUPLICATE_ERROR }
+
   // `select` so we get the new id back — the private note is stored against it
   // in a separate table, so there is nothing to attach it to otherwise.
   const { data: inserted, error } = await supabase
@@ -545,6 +606,16 @@ export async function recordVolunteering(form: FormData): Promise<ActionResult> 
   if (hours > 24) return { ok: false, error: "Hours must be 24 or fewer for a single day." }
 
   const supabase = await createClient()
+
+  // Volunteering is logged once per day, whatever the organization.
+  const { data: dupe } = await supabase
+    .from("volunteering")
+    .select("id")
+    .eq("user_id", me.id)
+    .eq("date", date)
+    .limit(1)
+  if (dupe?.length) return { ok: false, error: DUPLICATE_ERROR }
+
   const { error } = await supabase.from("volunteering").insert({
     user_id: me.id,
     date,
@@ -553,6 +624,7 @@ export async function recordVolunteering(form: FormData): Promise<ActionResult> 
     notes,
   })
 
+  if (isUniqueViolation(error)) return { ok: false, error: DUPLICATE_ERROR }
   if (error) {
     console.log("[v0] recordVolunteering error:", error.message)
     return { ok: false, error: GENERIC_ERROR }
@@ -597,6 +669,19 @@ export async function recordChamberEvent(form: FormData): Promise<ActionResult> 
   // is left out of the insert so it defaults to null; existing rows that already
   // have a value keep it and still render in the activity list.
   const supabase = await createClient()
+
+  // An event picked from the list stores the calendar's own title, so matching
+  // on name + date catches a repeat whether either entry came from the list or
+  // the manual fallback.
+  const { data: dupe } = await supabase
+    .from("chamber_events")
+    .select("id")
+    .eq("user_id", me.id)
+    .eq("date", date)
+    .ilike("event_name", likeExact(eventName))
+    .limit(1)
+  if (dupe?.length) return { ok: false, error: DUPLICATE_ERROR }
+
   const row: Record<string, unknown> = { user_id: me.id, date, event_name: eventName, notes }
   if (linkedEventId) row.pride_chamber_event_id = linkedEventId
 
@@ -612,6 +697,7 @@ export async function recordChamberEvent(form: FormData): Promise<ActionResult> 
     ;({ error } = await supabase.from("chamber_events").insert(row))
   }
 
+  if (isUniqueViolation(error)) return { ok: false, error: DUPLICATE_ERROR }
   if (error) {
     console.log("[v0] recordChamberEvent error:", error.message)
     return { ok: false, error: GENERIC_ERROR }
@@ -659,6 +745,20 @@ export async function inviteGuest(form: FormData): Promise<ActionResult> {
   }
 
   const supabase = await createClient()
+
+  // The same guest invited by the same member to the same meeting (or, with no
+  // meeting chosen, the same group) is a repeat.
+  let dupeQuery = supabase
+    .from("guest_invitations")
+    .select("id")
+    .eq("inviter_user_id", me.id)
+    .ilike("guest_email", likeExact(guestEmail))
+  dupeQuery = meeting
+    ? dupeQuery.eq("meeting_uid", meeting.id)
+    : dupeQuery.is("meeting_uid", null).eq("sub_group", subGroup)
+  const { data: dupe } = await dupeQuery.limit(1)
+  if (dupe?.length) return { ok: false, error: DUPLICATE_ERROR }
+
   const { error } = await supabase.from("guest_invitations").insert({
     inviter_user_id: me.id,
     guest_name: guestName,
