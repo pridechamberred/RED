@@ -52,6 +52,8 @@ export type Member = {
   phone?: string | null
   /** Opt-in to show phone + email to other members. Treat absent as false. */
   share_contact?: boolean | null
+  /** Business category (migration 024). Optional: absent before the migration runs. */
+  business_category?: string | null
   created_at: string
 }
 

@@ -1,20 +1,31 @@
 "use client"
 
 import { useActionState } from "react"
-import { Briefcase, Loader2, Mail } from "lucide-react"
+import { Briefcase, Loader2, Mail, Tags } from "lucide-react"
+import { BusinessCategoryCombobox } from "@/components/business-category-combobox"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { saveDetails, type DetailsState } from "@/app/profile/details-actions"
 import { cn } from "@/lib/utils"
 
-export function DetailsForm({ initialCompany, initialEmail }: { initialCompany: string; initialEmail: string }) {
+export function DetailsForm({
+  initialCompany,
+  initialEmail,
+  initialBusinessCategory,
+}: {
+  initialCompany: string
+  initialEmail: string
+  initialBusinessCategory: string
+}) {
   const [state, action, pending] = useActionState<DetailsState, FormData>(saveDetails, {
     status: "idle",
     company: initialCompany,
     email: initialEmail,
+    businessCategory: initialBusinessCategory,
   })
-  const formKey = state.status === "saved" ? `${state.company}|${state.email}` : "editing"
+  const formKey =
+    state.status === "saved" ? `${state.company}|${state.email}|${state.businessCategory}` : "editing"
 
   return (
     <section aria-labelledby="details-heading" className="mt-8 flex flex-col gap-4">
@@ -48,6 +59,27 @@ export function DetailsForm({ initialCompany, initialEmail }: { initialCompany: 
           {state.companyError ? (
             <p id="details-company-error" className="text-sm text-destructive">
               {state.companyError}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="details-category" className="flex items-center gap-2">
+            <Tags className="size-4 text-muted-foreground" aria-hidden />
+            Business category
+            <span className="text-xs font-normal text-muted-foreground">Optional</span>
+          </Label>
+          <BusinessCategoryCombobox
+            id="details-category"
+            name="business_category"
+            defaultValue={state.businessCategory}
+            key={`category-${formKey}`}
+            invalid={Boolean(state.categoryError)}
+            describedBy={state.categoryError ? "details-category-error" : undefined}
+          />
+          {state.categoryError ? (
+            <p id="details-category-error" className="text-sm text-destructive">
+              {state.categoryError}
             </p>
           ) : null}
         </div>
