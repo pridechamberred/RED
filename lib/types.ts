@@ -52,6 +52,8 @@ export type Member = {
   phone?: string | null
   /** Opt-in to show phone + email to other members. Treat absent as false. */
   share_contact?: boolean | null
+  /** Business category (migration 024). Optional: absent before the migration runs. */
+  business_category?: string | null
   created_at: string
 }
 
@@ -65,6 +67,8 @@ export type MemberOption = {
   /** All of the member's groups (migration 015). Absent pre-015 — see `Member`. */
   sub_groups?: SubGroup[] | null
   avatar_url: string | null
+  /** Migration 024. Absent when that column has not been added yet. */
+  business_category?: string | null
 }
 
 /** One eligible imported event, ready to show in the chamber-event dropdown. */

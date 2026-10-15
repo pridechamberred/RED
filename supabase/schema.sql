@@ -41,6 +41,8 @@ create table if not exists public.members (
   -- Contact details (migration 020). Only shown to other members when share_contact is true.
   phone         text check (phone is null or char_length(phone) <= 30),
   share_contact boolean not null default false,
+  -- Optional business category (migration 024), validated against lib/business-categories.ts.
+  business_category text check (business_category is null or char_length(business_category) <= 80),
   created_at   timestamptz not null default now(),
   constraint members_sub_groups_valid check (
     cardinality(sub_groups) >= 1

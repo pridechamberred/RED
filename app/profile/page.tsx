@@ -47,7 +47,11 @@ export default async function ProfilePage() {
         ))}
       </dl>
 
-      <DetailsForm initialCompany={me.company ?? ""} initialEmail={me.email ?? ""} />
+      <DetailsForm
+        initialCompany={me.company ?? ""}
+        initialEmail={me.email ?? ""}
+        initialBusinessCategory={me.business_category ?? ""}
+      />
 
       <ContactForm initialPhone={me.phone ?? ""} initialShare={me.share_contact === true} />
 

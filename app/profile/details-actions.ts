@@ -3,14 +3,17 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { isBusinessCategory } from "@/lib/business-categories"
 
 export type DetailsState = {
   status: "idle" | "saved" | "error"
   message?: string
   companyError?: string
   emailError?: string
+  categoryError?: string
   company: string
   email: string
+  businessCategory: string
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -29,8 +32,12 @@ export async function saveDetails(prev: DetailsState, formData: FormData): Promi
 
   const company = String(formData.get("company") ?? "").trim().replace(/\s+/g, " ")
   const email = String(formData.get("email") ?? "").trim().toLowerCase()
-  const values = { company, email }
+  const businessCategory = String(formData.get("business_category") ?? "").trim()
+  const values = { company, email, businessCategory }
 
+  if (businessCategory && !isBusinessCategory(businessCategory)) {
+    return { ...values, status: "error", message: "Please fix the highlighted field.", categoryError: "Pick a category from the list." }
+  }
   if (company.length > 120) {
     return { ...values, status: "error", message: "Please fix the highlighted field.", companyError: "Keep it under 120 characters." }
   }
@@ -78,7 +85,7 @@ export async function saveDetails(prev: DetailsState, formData: FormData): Promi
 
   const { error } = await admin
     .from("members")
-    .update({ company: company || null, email })
+    .update({ company: company || null, email, business_category: businessCategory || null })
     .eq("id", me.id)
 
   if (error) {
@@ -97,5 +104,6 @@ export async function saveDetails(prev: DetailsState, formData: FormData): Promi
     message: emailChanged ? "Saved. Use your new email address next time you sign in." : "Saved.",
     company,
     email,
+    businessCategory,
   }
 }

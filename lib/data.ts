@@ -59,6 +59,7 @@ function normalizeMemberOptions(data: unknown): MemberOption[] {
     sub_group: m.sub_group as MemberOption["sub_group"],
     sub_groups: (m.sub_groups as MemberOption["sub_groups"]) ?? undefined,
     avatar_url: (m.avatar_url as string | null) ?? null,
+  business_category: (m.business_category as string | null) ?? null,
   }))
 }
 
@@ -75,7 +76,8 @@ export async function getSearchableMembers(excludeMemberId: string): Promise<Mem
   // from "everything" down to the pre-migration shape rather than let the whole
   // list come back empty. `normalizeMemberOptions` fills the gaps either way.
   const attempts = [
-    "id, first_name, last_name, company, sub_group, sub_groups, avatar_url",
+  "id, first_name, last_name, company, sub_group, sub_groups, avatar_url, business_category",
+  "id, first_name, last_name, company, sub_group, sub_groups, avatar_url",
     "id, first_name, last_name, company, sub_group, avatar_url",
     "id, first_name, last_name, company, sub_group",
   ]

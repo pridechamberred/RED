@@ -9,14 +9,16 @@ import { Search, X } from "lucide-react"
 
 /**
  * Forgiving search-as-you-type over the member list. Matches on first name,
- * last name, full name and company, token by token, so "sarah mark" finds
- * Sarah Smith of Smith Marketing.
+ * last name, full name, company and business category, token by token, so
+ * "sarah mark" finds Sarah Smith of Smith Marketing.
  */
 function score(member: MemberOption, tokens: string[]) {
   const first = member.first_name.toLowerCase()
   const last = member.last_name.toLowerCase()
   const full = `${first} ${last}`
   const company = (member.company ?? "").toLowerCase()
+  const category = (member.business_category ?? "").toLowerCase()
+  const startsAWord = (text: string, token: string) => text.split(/[\s/&,-]+/).some((w) => w.startsWith(token))
 
   let total = 0
 
@@ -24,8 +26,8 @@ function score(member: MemberOption, tokens: string[]) {
     let best = 0
     if (first.startsWith(token) || last.startsWith(token)) best = 4
     else if (full.includes(token)) best = 3
-    else if (company.split(/\s+/).some((w) => w.startsWith(token))) best = 2
-    else if (company.includes(token)) best = 1
+    else if (startsAWord(company, token) || startsAWord(category, token)) best = 2
+    else if (company.includes(token) || category.includes(token)) best = 1
 
     if (best === 0) return 0 // every token must match something
     total += best
@@ -101,7 +103,7 @@ export function MemberSearch({ members }: { members: MemberOption[] }) {
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-semibold leading-tight">{memberName(m)}</span>
                   <span className="truncate text-sm leading-relaxed text-muted-foreground">
-                    {m.company || formatSubGroups(m)}
+                    {[m.company, m.business_category].filter(Boolean).join(" | ") || formatSubGroups(m)}
                   </span>
                 </span>
               </button>
