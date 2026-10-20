@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import { AppShell } from "@/components/app-shell"
 import { UpcomingMeetings } from "@/components/upcoming-meetings"
 import { BrandMark } from "@/components/brand-mark"
+import { CompanySpotlight } from "@/components/company-spotlight"
 import { MemberSearch } from "@/components/member-search"
 import { VousDashboard } from "@/components/vous/vous-dashboard"
 import { getCurrentMember, getSearchableMembers } from "@/lib/data"
@@ -111,6 +112,10 @@ export default async function HomePage() {
           </Link>
         </div>
       </div>
+
+      <Suspense fallback={null}>
+        <CompanySpotlight />
+      </Suspense>
 
       {/* Streamed separately so a slow Google Calendar response cannot hold up
           the rest of the page. */}
