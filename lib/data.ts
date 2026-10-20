@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { SOCIAL_PLATFORMS, memberSocialLinks, type SocialLinks } from "@/lib/socials"
 import {
   type ActivityRow,
   type GuestInviteRow,
@@ -682,4 +683,36 @@ export async function getReferralsReceivedCount(memberId: string): Promise<numbe
     return 0
   }
   return count ?? 0
+}
+
+export type SpotlightMember = {
+  id: string
+  company: string
+  first_name: string
+} & SocialLinks
+
+/**
+ * One random member whose company is set and who has at least one valid social
+ * link. Returns null when nobody qualifies (or the socials migration hasn't run).
+ */
+export async function getSpotlightMember(): Promise<SpotlightMember | null> {
+  const supabase = await createClient()
+  const socialColumns = SOCIAL_PLATFORMS.map((p) => p.column)
+
+  const { data, error } = await supabase
+    .from("members")
+    .select(["id", "first_name", "company", ...socialColumns].join(", "))
+    .not("company", "is", null)
+    .or(socialColumns.map((c) => `${c}.not.is.null`).join(","))
+
+  if (error) {
+    if (error.code !== UNDEFINED_COLUMN) console.log("[v0] getSpotlightMember error:", error.message)
+    return null
+  }
+
+  const eligible = ((data ?? []) as unknown as SpotlightMember[]).filter(
+    (m) => m.company?.trim() && memberSocialLinks(m).length > 0,
+  )
+  if (eligible.length === 0) return null
+  return eligible[Math.floor(Math.random() * eligible.length)]
 }
