@@ -54,6 +54,8 @@ export type Member = {
   share_contact?: boolean | null
   /** Business category (migration 024). Optional: absent before the migration runs. */
   business_category?: string | null
+  /** Pronouns (migration 026). 'hidden' means "do not show"; use `displayPronouns`. */
+  pronouns?: string | null
   created_at: string
 }
 

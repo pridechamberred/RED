@@ -43,6 +43,7 @@ create table if not exists public.members (
   share_contact boolean not null default false,
   -- Optional business category (migration 024), validated against lib/business-categories.ts.
   business_category text check (business_category is null or char_length(business_category) <= 80),
+  pronouns text check (pronouns is null or char_length(pronouns) <= 40),
   created_at   timestamptz not null default now(),
   constraint members_sub_groups_valid check (
     cardinality(sub_groups) >= 1

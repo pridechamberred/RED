@@ -6,6 +6,7 @@ import { MemberAvatar } from "@/components/member-avatar"
 import { MemberSocials } from "@/components/member-socials"
 import { getCurrentMember, getMemberById } from "@/lib/data"
 import { formatSubGroups, isAdmin, memberName } from "@/lib/types"
+import { displayPronouns } from "@/lib/pronouns"
 import { CalendarPlus, ChevronRight, Handshake, Gift, Mail, Phone } from "lucide-react"
 
 const ACTIONS = [
@@ -45,7 +46,7 @@ export default async function MemberActionPage({ params }: { params: Promise<{ i
         <span className="flex min-w-0 flex-col">
           <span className="truncate font-semibold leading-tight">{name}</span>
           <span className="truncate text-sm leading-relaxed text-muted-foreground">
-            {member.company ? `${member.company} · ${formatSubGroups(member)}` : formatSubGroups(member)}
+            {[member.company, formatSubGroups(member), displayPronouns(member.pronouns)].filter(Boolean).join(" | ")}
           </span>
           {member.share_contact === true ? (
             <span className="mt-1.5 flex flex-col gap-1 text-sm">

@@ -1,8 +1,10 @@
 "use client"
 
 import { useActionState } from "react"
-import { Briefcase, Loader2, Mail, Tags } from "lucide-react"
+import { Briefcase, Loader2, Mail, Tags, UserRound } from "lucide-react"
 import { BusinessCategoryCombobox } from "@/components/business-category-combobox"
+import { PronounsField } from "@/components/pronouns-field"
+import { parseStoredPronouns } from "@/lib/pronouns"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,25 +15,32 @@ export function DetailsForm({
   initialCompany,
   initialEmail,
   initialBusinessCategory,
+  initialPronouns,
 }: {
   initialCompany: string
   initialEmail: string
   initialBusinessCategory: string
+  initialPronouns: string
 }) {
+  const parsedPronouns = parseStoredPronouns(initialPronouns)
   const [state, action, pending] = useActionState<DetailsState, FormData>(saveDetails, {
     status: "idle",
     company: initialCompany,
     email: initialEmail,
     businessCategory: initialBusinessCategory,
+    pronounsChoice: parsedPronouns.choice,
+    pronounsOther: parsedPronouns.other,
   })
   const formKey =
-    state.status === "saved" ? `${state.company}|${state.email}|${state.businessCategory}` : "editing"
+    state.status === "saved"
+      ? `${state.company}|${state.email}|${state.businessCategory}|${state.pronounsChoice}|${state.pronounsOther}`
+      : "editing"
 
   return (
     <section aria-labelledby="details-heading" className="mt-8 flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <h2 id="details-heading" className="text-lg font-semibold tracking-tight">
-          Business and email
+          Business and info
         </h2>
         <p className="text-sm leading-relaxed text-muted-foreground">
           Your email address is also what you use to sign in.
@@ -85,6 +94,21 @@ export function DetailsForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <Label htmlFor="details-pronouns" className="flex items-center gap-2">
+            <UserRound className="size-4 text-muted-foreground" aria-hidden />
+            Pronouns
+            <span className="text-xs font-normal text-muted-foreground">Optional</span>
+          </Label>
+          <PronounsField
+            id="details-pronouns"
+            key={`pronouns-${formKey}`}
+            defaultChoice={state.pronounsChoice}
+            defaultOther={state.pronounsOther}
+            error={state.pronounsError}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="details-email" className="flex items-center gap-2">
             <Mail className="size-4 text-muted-foreground" aria-hidden />
             Email address
@@ -125,7 +149,7 @@ export function DetailsForm({
 
         <Button type="submit" size="lg" className="h-12 w-full text-base" disabled={pending}>
           {pending ? <Loader2 className="size-5 animate-spin" aria-hidden /> : null}
-          {pending ? "Saving…" : "Save business and email"}
+          {pending ? "Saving…" : "Save business and info"}
         </Button>
       </form>
     </section>
