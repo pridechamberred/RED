@@ -30,7 +30,7 @@ export function PronounsField({
           <SelectValue>
             {(v: string | null) =>
               v ? PRONOUN_CHOICE_LABELS[v as Exclude<PronounChoice, "">] : (
-                <span className="text-muted-foreground">Choose your pronouns</span>
+                <span className="text-muted-foreground">How do you identify?</span>
               )
             }
           </SelectValue>
