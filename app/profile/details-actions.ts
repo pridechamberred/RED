@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isBusinessCategory } from "@/lib/business-categories"
+import { isPronounChoice, PRONOUN_OTHER_MAX, PRONOUNS_HIDDEN, type PronounChoice } from "@/lib/pronouns"
 
 export type DetailsState = {
   status: "idle" | "saved" | "error"
@@ -11,9 +12,12 @@ export type DetailsState = {
   companyError?: string
   emailError?: string
   categoryError?: string
+  pronounsError?: string
   company: string
   email: string
   businessCategory: string
+  pronounsChoice: PronounChoice
+  pronounsOther: string
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -33,7 +37,20 @@ export async function saveDetails(prev: DetailsState, formData: FormData): Promi
   const company = String(formData.get("company") ?? "").trim().replace(/\s+/g, " ")
   const email = String(formData.get("email") ?? "").trim().toLowerCase()
   const businessCategory = String(formData.get("business_category") ?? "").trim()
-  const values = { company, email, businessCategory }
+  const rawChoice = String(formData.get("pronouns_choice") ?? "").trim()
+  const pronounsChoice: PronounChoice = isPronounChoice(rawChoice) ? rawChoice : ""
+  const pronounsOther =
+    pronounsChoice === "other" ? String(formData.get("pronouns_other") ?? "").trim().replace(/\s+/g, " ") : ""
+  const values = { company, email, businessCategory, pronounsChoice, pronounsOther }
+
+  if (pronounsChoice === "other" && !pronounsOther) {
+    return { ...values, status: "error", message: "Please fix the highlighted field.", pronounsError: "Write your pronouns, or pick another option." }
+  }
+  if (pronounsOther.length > PRONOUN_OTHER_MAX) {
+    return { ...values, status: "error", message: "Please fix the highlighted field.", pronounsError: `Keep it under ${PRONOUN_OTHER_MAX} characters.` }
+  }
+  const pronouns =
+    pronounsChoice === "other" ? pronounsOther : pronounsChoice === "hidden" ? PRONOUNS_HIDDEN : pronounsChoice || null
 
   if (businessCategory && !isBusinessCategory(businessCategory)) {
     return { ...values, status: "error", message: "Please fix the highlighted field.", categoryError: "Pick a category from the list." }
@@ -85,7 +102,7 @@ export async function saveDetails(prev: DetailsState, formData: FormData): Promi
 
   const { error } = await admin
     .from("members")
-    .update({ company: company || null, email, business_category: businessCategory || null })
+    .update({ company: company || null, email, business_category: businessCategory || null, pronouns })
     .eq("id", me.id)
 
   if (error) {
@@ -105,5 +122,7 @@ export async function saveDetails(prev: DetailsState, formData: FormData): Promi
     company,
     email,
     businessCategory,
+    pronounsChoice,
+    pronounsOther,
   }
 }

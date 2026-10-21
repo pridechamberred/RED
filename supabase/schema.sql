@@ -43,6 +43,7 @@ create table if not exists public.members (
   share_contact boolean not null default false,
   -- Optional business category (migration 024), validated against lib/business-categories.ts.
   business_category text check (business_category is null or char_length(business_category) <= 80),
+  pronouns text check (pronouns is null or char_length(pronouns) <= 40),
   created_at   timestamptz not null default now(),
   constraint members_sub_groups_valid check (
     cardinality(sub_groups) >= 1
@@ -827,3 +828,16 @@ where not exists (select 1 from public.chamber_events limit 1);
 --   -- same person entered twice under different addresses
 --   select lower(first_name || ' ' || last_name) as who, count(*), array_agg(email)
 --   from public.members group by 1 having count(*) > 1;
+
+-- 025: record of evening-before meeting reminders already sent, so a retried
+-- or doubled cron run never emails the same member twice for one meeting.
+-- Written only by the server (service role); no client access is needed.
+
+create table if not exists public.meeting_reminder_sends (
+  meeting_id text not null,
+  member_id  uuid not null references public.members(id) on delete cascade,
+  sent_at    timestamptz not null default now(),
+  primary key (meeting_id, member_id)
+);
+
+alter table public.meeting_reminder_sends enable row level security;

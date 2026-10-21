@@ -106,6 +106,13 @@ type GuestRequestAdminEmailInput = {
   adminUrl: string
 }
 
+type MeetingEveReminderEmailInput = {
+  to: string
+  firstName: string
+  subGroup: string
+  logUrl: string
+}
+
 type ScraperFailureEmailInput = {
   /** The underlying error message from the scrape attempt. */
   error: string
@@ -837,6 +844,52 @@ function renderGuestRequestAdmin(input: GuestRequestAdminEmailInput, copy: Copy)
   return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
 }
 
+function nonEmptyLines(value: string) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function renderMeetingEveReminder(input: MeetingEveReminderEmailInput, copy: Copy): RenderedEmail {
+  const e = escapeHtml
+  const htmlVars: Copy = { firstName: e(input.firstName), subGroup: e(input.subGroup) }
+  const textVars: Copy = { firstName: input.firstName, subGroup: input.subGroup }
+
+  const listLines = nonEmptyLines(copy.list)
+  const bodyLines = nonEmptyLines(copy.body)
+
+  const inner = [
+    para(fillHtml(copy.greeting, htmlVars)),
+    para(fillHtml(copy.question, htmlVars)),
+    listLines.length
+      ? para(listLines.map((line) => fillHtml(line, htmlVars)).join("<br />"), `${P}font-weight:600;color:#17171a;`)
+      : "",
+    ...bodyLines.map((line) => para(fillHtml(line, htmlVars))),
+    ctaButton(input.logUrl, fillHtml(copy.buttonLabel, htmlVars), e),
+    copy.footnote.trim()
+      ? para(fillHtml(copy.footnote, htmlVars), "margin:0;font-size:13px;line-height:1.6;color:#6d6d68;")
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
+
+  const text = [
+    fillText(copy.greeting, textVars),
+    ``,
+    fillText(copy.question, textVars),
+    ...listLines.map((line) => fillText(line, textVars)),
+    ``,
+    ...bodyLines.map((line) => fillText(line, textVars)),
+    ``,
+    `${fillText(copy.buttonLabel, textVars)}: ${input.logUrl}`,
+    ``,
+    fillText(copy.footnote, textVars),
+  ].join("\n")
+
+  return { subject: fillText(copy.subject, textVars), html: htmlShell(incredibleHeader(), inner), text }
+}
+
 function renderSyncFailure(input: ScraperFailureEmailInput, copy: Copy): RenderedEmail {
   const e = escapeHtml
   const htmlVars: Copy = { trigger: e(input.trigger), window: e(input.window) }
@@ -1105,6 +1158,17 @@ export async function sendGuestRequestAdminEmail(input: GuestRequestAdminEmailIn
   )
 }
 
+/** The 6pm-the-evening-before nudge to log stats ahead of a sub-group meeting. */
+export async function sendMeetingEveReminderEmail(input: MeetingEveReminderEmailInput): Promise<DeliveryResult> {
+  const copy = await resolveEmailCopy("meeting-eve-reminder")
+  const { subject, html, text } = renderMeetingEveReminder(input, copy)
+  return deliver(
+    "meeting eve reminder",
+    { to: input.to, subject, html, text },
+    () => console.log(`[v0] Would email ${input.to} the ${input.subGroup} meeting eve reminder`),
+  )
+}
+
 /** Where a failed Pride Chamber sync is reported, by request. */
 const SCRAPER_ALERT_EMAIL = "den@poolsyde.com"
 
@@ -1230,6 +1294,12 @@ const PREVIEW_SAMPLES = {
     meetingLocation: "The Ivy, 1 High Street",
     adminUrl: "https://redgroup.app/admin",
   } satisfies GuestRequestAdminEmailInput,
+  "meeting-eve-reminder": {
+    to: "member@example.com",
+    firstName: "Jordan",
+    subGroup: "RED Central",
+    logUrl: "https://redgroup.app/",
+  } satisfies MeetingEveReminderEmailInput,
   "sync-failure": {
     error: "TimeoutError: navigation exceeded 30000ms while loading the calendar",
     window: "2026-08-13 to 2026-09-13",
@@ -1284,6 +1354,9 @@ export function renderEmailPreview(id: string, overrides?: Record<string, string
       break
     case "guest-request-admin":
       rendered = renderGuestRequestAdmin(PREVIEW_SAMPLES["guest-request-admin"], copy)
+      break
+    case "meeting-eve-reminder":
+      rendered = renderMeetingEveReminder(PREVIEW_SAMPLES["meeting-eve-reminder"], copy)
       break
     case "sync-failure":
       rendered = renderSyncFailure(PREVIEW_SAMPLES["sync-failure"], copy)
