@@ -484,6 +484,59 @@ export const EMAIL_TEMPLATES: EmailTemplateMeta[] = [
     ],
   },
   {
+    id: "meeting-eve-reminder",
+    name: "Meeting eve reminder",
+    description:
+      "Sent automatically at 6pm Eastern the evening before a RED meeting to every member of that meeting's sub-group, nudging them to log their stats.",
+    audience: "member",
+    sender: "incREDible",
+    fields: [
+      { key: "subject", label: "Subject line", default: `Get RED-y for tomorrow` },
+      {
+        key: "greeting",
+        label: "Greeting",
+        multiline: true,
+        default: `Yo, {firstName}, here's your friendly reminder about RED tomorrow.`,
+      },
+      {
+        key: "question",
+        label: "Question (list follows this)",
+        multiline: true,
+        default: `Have you logged your latest RED Group stats in incREDible? \u2764\uFE0F`,
+      },
+      {
+        key: "list",
+        label: "Stats list (one item per line)",
+        multiline: true,
+        default: [
+          "\u{1F534} Referrals",
+          "\u{1F534} Done deals",
+          "\u{1F534} Vous",
+          "\u{1F534} Guests invited",
+          "\u{1F534} Volunteering",
+          "\u{1F534} Event attendance",
+        ].join("\n"),
+      },
+      {
+        key: "body",
+        label: "Body (one paragraph per line, button follows this)",
+        multiline: true,
+        default: `It takes just a few seconds.\nIf you don't log it, it didn't happen \u{1F440}`,
+      },
+      { key: "buttonLabel", label: "Button label", default: `\u{1F449} LOG YOUR STATS IN incREDible` },
+      {
+        key: "footnote",
+        label: "Footnote (after the button)",
+        multiline: true,
+        default: `(incREDible is in a soft launch. If your RED Group hasn't been introduced to it yet, feel free to disregard this message... but still show up at RED!)`,
+      },
+    ],
+    variables: [
+      { token: "firstName", label: "Member's first name", sample: "Jordan" },
+      { token: "subGroup", label: "Sub-group meeting tomorrow", sample: "RED Central" },
+    ],
+  },
+  {
     id: "sync-failure",
     name: "Calendar sync failure alert",
     description: "Internal heads-up to the maintainer when the Pride Chamber calendar sync fails.",
