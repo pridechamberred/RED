@@ -1,6 +1,7 @@
 import "server-only"
 
 import { SUB_GROUPS, type SubGroup } from "@/lib/types"
+import { easternTodayISO } from "@/lib/eastern-date"
 
 /**
  * Upcoming RED meetings, read from the chamber's public Google Calendar.
@@ -536,8 +537,11 @@ export async function getLastMeetingForGroups(
   now: Date = new Date(),
 ): Promise<(Meeting & { subGroup: SubGroup }) | null> {
   const recent = await getRecentMeetings(now, 42)
+  const today = easternTodayISO(now)
   for (const meeting of recent) {
-    if (new Date(meeting.startISO).getTime() > now.getTime()) continue
+  if (new Date(meeting.startISO).getTime() > now.getTime()) continue
+  // Members check this while sitting in today's meeting, so "last meeting" means the one before today.
+  if (easternTodayISO(new Date(meeting.startISO)) >= today) continue
     const subGroup = subGroupFromTitle(meeting.title)
     if (subGroup && groups.includes(subGroup)) return { ...meeting, subGroup }
   }
