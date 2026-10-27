@@ -148,9 +148,12 @@ export async function scrapePrideChamberEvents(
     })
 
     if (!response.ok) {
+      const blockedByCloudflare = response.headers.get("cf-mitigated") === "challenge"
       return {
         ok: false,
-        error: `Calendar responded ${response.status} ${response.statusText}`,
+        error: blockedByCloudflare
+          ? `Calendar responded ${response.status}: blocked by a Cloudflare bot challenge on business.thepridechamber.org. The site owner needs to allow automated access (or provide a calendar feed) before syncing can resume.`
+          : `Calendar responded ${response.status} ${response.statusText}`,
         fromISO,
         toISO,
       }
