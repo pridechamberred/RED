@@ -3,7 +3,8 @@ import { AppShell } from "@/components/app-shell"
 import { FormHeader } from "@/components/form-header"
 import { PrideChamberAdmin } from "@/components/pride-chamber-admin"
 import { getCurrentMember, getEligiblePrideChamberEvents } from "@/lib/data"
-import { getRecentSyncRuns } from "@/lib/pride-chamber-sync"
+import { getManualPrideChamberEvents, getRecentSyncRuns } from "@/lib/pride-chamber-sync"
+import { easternTodayISO } from "@/lib/eastern-date"
 import { isAdmin } from "@/lib/types"
 
 export default async function PrideChamberAdminPage() {
@@ -11,7 +12,11 @@ export default async function PrideChamberAdminPage() {
   if (!me) redirect("/auth/login")
   if (!isAdmin(me.role)) redirect("/")
 
-  const [events, runs] = await Promise.all([getEligiblePrideChamberEvents(), getRecentSyncRuns()])
+  const [events, runs, manualEvents] = await Promise.all([
+    getEligiblePrideChamberEvents(),
+    getRecentSyncRuns(),
+    getManualPrideChamberEvents(),
+  ])
 
   return (
     <AppShell showAdmin>
@@ -21,7 +26,7 @@ export default async function PrideChamberAdminPage() {
         backHref="/admin"
         backLabel="Admin"
       />
-      <PrideChamberAdmin events={events} runs={runs} />
+      <PrideChamberAdmin events={events} runs={runs} manualEvents={manualEvents} today={easternTodayISO()} />
     </AppShell>
   )
 }
