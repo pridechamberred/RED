@@ -120,6 +120,7 @@ export async function runPrideChamberSync(trigger: "cron" | "manual" = "cron"): 
       .from("pride_chamber_events")
       .update({ is_active: false })
       .eq("is_active", true)
+      .not("source_id", "like", `${MANUAL_SOURCE_PREFIX}%`)
       .not("source_id", "in", `(${keepIds.join(",")})`)
       .select("id")
 
@@ -158,6 +159,38 @@ async function recordRun(
   if (error && !isMissingTable(error.code, error.message)) {
     console.log("[v0] pride-chamber sync-run log error:", error.message)
   }
+}
+
+/** Admin-added events use this source_id prefix so the calendar sync never retires them. */
+export const MANUAL_SOURCE_PREFIX = "manual-"
+
+export type ManualPrideChamberEvent = {
+  id: string
+  title: string
+  /** YYYY-MM-DD (Eastern). */
+  eventDate: string
+}
+
+/** Active admin-added events (past and future), newest first. Service-role
+ *  read, so callers MUST gate on admin themselves. */
+export async function getManualPrideChamberEvents(): Promise<ManualPrideChamberEvent[]> {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from("pride_chamber_events")
+    .select("id, title, event_date")
+    .eq("is_active", true)
+    .like("source_id", `${MANUAL_SOURCE_PREFIX}%`)
+    .order("event_date", { ascending: false })
+
+  if (error) {
+    if (!isMissingTable(error.code, error.message)) console.log("[v0] getManualPrideChamberEvents error:", error.message)
+    return []
+  }
+  return ((data as { id: string; title: string; event_date: string }[]) ?? []).map((e) => ({
+    id: e.id,
+    title: e.title,
+    eventDate: e.event_date,
+  }))
 }
 
 /** Recent sync attempts, newest first. Read with the service-role client, so

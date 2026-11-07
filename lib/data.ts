@@ -661,6 +661,8 @@ export async function getPrideChamberEventById(
     .select("id, title, event_date")
     .eq("id", id)
     .eq("is_active", true)
+    // Future (admin-added) events can't be recorded until the day they happen.
+    .lte("event_date", easternTodayISO())
     .maybeSingle()
 
   if (error) {

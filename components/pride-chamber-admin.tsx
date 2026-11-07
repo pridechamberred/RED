@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { triggerPrideChamberSync, type ManualSyncResult } from "@/app/admin/pride-chamber/actions"
 import { formatLongDate } from "@/lib/eastern-date"
 import type { PrideChamberEventOption } from "@/lib/types"
-import type { SyncRun } from "@/lib/pride-chamber-sync"
+import type { ManualPrideChamberEvent, SyncRun } from "@/lib/pride-chamber-sync"
+import { ManualPrideChamberEvents } from "@/components/manual-pride-chamber-events"
 
 /** "Sep 13, 2026, 4:02 AM" in Orlando time, from an ISO timestamp. */
 function formatRunTime(iso: string): string {
@@ -23,9 +24,13 @@ function formatRunTime(iso: string): string {
 export function PrideChamberAdmin({
   events,
   runs,
+  manualEvents,
+  today,
 }: {
   events: PrideChamberEventOption[]
   runs: SyncRun[]
+  manualEvents: ManualPrideChamberEvent[]
+  today: string
 }) {
   const [syncing, setSyncing] = useState(false)
   const [result, setResult] = useState<ManualSyncResult | null>(null)
@@ -78,6 +83,8 @@ export function PrideChamberAdmin({
           </p>
         ) : null}
       </section>
+
+      <ManualPrideChamberEvents events={manualEvents} today={today} />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-muted-foreground">
