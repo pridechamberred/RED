@@ -481,7 +481,8 @@ export async function recordDoneDeal(form: FormData): Promise<ActionResult> {
 /**
  * Amend an existing done deal from the record.
  *
- * Five intents, all scoped to the caller's own deals:
+ * Six intents, all scoped to the caller's own deals:
+ *   date      — change the date the deal closed (a recurring deal's start)
  *   override  — replace the computed total for one year with a manual figure
  *   clear     — drop that override and go back to accrual
  *   stop      — halt a recurring deal permanently, locking what it accrued
@@ -502,7 +503,7 @@ export async function updateDoneDeal(form: FormData): Promise<ActionResult> {
   // a member cannot amend someone else's row even if RLS were relaxed.
   const { data: existing, error: readError } = await supabase
     .from("done_deals")
-    .select("id, date, deal_type, user_id")
+    .select("id, date, deal_type, user_id, recurring_ended_on")
     .eq("id", dealId)
     .eq("user_id", me.id)
     .maybeSingle()
@@ -513,7 +514,12 @@ export async function updateDoneDeal(form: FormData): Promise<ActionResult> {
   }
   if (!existing) return { ok: false, error: "We couldn't find that deal on your record." }
 
-  const deal = existing as { id: string; date: string; deal_type: "one-off" | "recurring" }
+  const deal = existing as {
+    id: string
+    date: string
+    deal_type: "one-off" | "recurring"
+    recurring_ended_on: string | null
+  }
 
   // Notes are handled on their own because they live in a different table
   // (public.done_deal_notes, owner-only by RLS) and so never form part of the
@@ -567,6 +573,15 @@ export async function updateDoneDeal(form: FormData): Promise<ActionResult> {
 
     patch = { referral_source: referral.source, referral_from_member_id: referral.memberId }
     note = "Referral source saved."
+  } else if (intent === "date") {
+    const date = str(form, "date")
+    if (!dateWithinRange(date)) return { ok: false, error: "Please choose a valid date, today or earlier." }
+    if (deal.recurring_ended_on && date > deal.recurring_ended_on) {
+      return { ok: false, error: "The date closed can't be after the deal was stopped." }
+    }
+
+    patch = { date }
+    note = "Date closed saved."
   } else if (intent === "stop") {
     if (deal.deal_type !== "recurring") return { ok: false, error: "Only recurring deals can be stopped." }
 

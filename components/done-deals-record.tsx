@@ -170,6 +170,38 @@ function UpdatePanel({
         className="flex flex-col gap-2"
         onSubmit={(e) => {
           e.preventDefault()
+          const value = new FormData(e.currentTarget).get("date")
+          submit("date", { date: typeof value === "string" ? value : "" })
+        }}
+      >
+        <Label htmlFor={`date-${variant}-${deal.id}`}>
+          {deal.dealType === "recurring" ? "Start date (date closed)" : "Date closed"}
+        </Label>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            id={`date-${variant}-${deal.id}`}
+            name="date"
+            type="date"
+            required
+            defaultValue={deal.date}
+            max={deal.recurringEndedOn ?? todayISO()}
+            className="h-12 min-w-40 flex-1 bg-card"
+          />
+          <Button type="submit" disabled={pending !== null} className="h-12">
+            {pending === "date" ? "Saving…" : "Save date"}
+          </Button>
+        </div>
+        {deal.dealType === "recurring" ? (
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            The total is recalculated from the new start date.
+          </p>
+        ) : null}
+      </form>
+
+      <form
+        className="flex flex-col gap-2 border-t border-border pt-4"
+        onSubmit={(e) => {
+          e.preventDefault()
           const value = new FormData(e.currentTarget).get("totalOverride")
           submit("override", { totalOverride: typeof value === "string" ? value : "", year: String(year) })
         }}
