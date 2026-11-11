@@ -6,6 +6,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // The PDFs are read from disk by the role-checked document route, so
+  // they must be bundled with that function on Vercel.
+  outputFileTracingIncludes: {
+    '/documents/[slug]': ['./documents/**/*.pdf'],
+  },
   async headers() {
     const supabaseOrigin = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 
