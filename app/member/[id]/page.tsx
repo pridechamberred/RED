@@ -45,7 +45,7 @@ export default async function MemberActionPage({ params }: { params: Promise<{ i
         <MemberAvatar member={member} size="md" />
         <span className="flex min-w-0 flex-col">
           <span className="truncate font-semibold leading-tight">{name}</span>
-          <span className="truncate text-sm leading-relaxed text-muted-foreground">
+          <span className="text-pretty break-words text-sm leading-relaxed text-muted-foreground">
             {[member.company, formatSubGroups(member), displayPronouns(member.pronouns)].filter(Boolean).join(" | ")}
           </span>
           {member.share_contact === true ? (
