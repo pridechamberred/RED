@@ -3,7 +3,7 @@ export const PRONOUN_PRESETS = ["She/Her", "He/Him", "They/Them"] as const
 /** Stored in `members.pronouns` when the member chose "Do not show my pronouns". */
 export const PRONOUNS_HIDDEN = "hidden"
 
-export const PRONOUN_OTHER_MAX = 40
+export const PRONOUN_OTHER_MAX = 50
 
 export type PronounChoice = (typeof PRONOUN_PRESETS)[number] | "other" | "hidden" | ""
 
